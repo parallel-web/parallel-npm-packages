@@ -18,10 +18,10 @@
   ],
   "dependencies": {
     "parallel-web": "0.5.0",
-    "typebox": "^1.1.37"
+    "typebox": "1.3.7"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
     "@parallel-web/oauth": "workspace:*",

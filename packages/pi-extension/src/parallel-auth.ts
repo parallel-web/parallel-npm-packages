@@ -1,50 +1,52 @@
-import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
+import { randomBytes } from 'node:crypto';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { loginWithParallel as runParallelOAuth } from '@parallel-web/oauth';
 
-const PARALLEL_PROVIDER = 'parallel';
+const CREDENTIALS_DIR = join(homedir(), '.parallel');
+const CREDENTIALS_PATH = join(CREDENTIALS_DIR, 'pi-credentials.json');
 
-type ApiKeyCredential = {
-  type: 'api_key';
-  key: string;
+type StoredCredentials = {
+  apiKey: string;
 };
 
-type ParallelAuthStorage = {
-  get(provider: string): ApiKeyCredential | undefined;
-  set(provider: string, credential: ApiKeyCredential): void;
-  remove(provider: string): void;
-  getApiKey?(provider: string): Promise<string | undefined>;
-};
-
-function getAuthStorage(ctx: ExtensionContext): ParallelAuthStorage {
-  return ctx.modelRegistry.authStorage as ParallelAuthStorage;
+function readStoredCredentials(): StoredCredentials | undefined {
+  try {
+    const raw = readFileSync(CREDENTIALS_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return typeof parsed?.apiKey === 'string' ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
-export async function getParallelApiKey(ctx: ExtensionContext) {
-  const authStorage = getAuthStorage(ctx);
-  if (authStorage.getApiKey) {
-    const apiKey = await authStorage.getApiKey(PARALLEL_PROVIDER);
-    if (apiKey) {
-      return apiKey;
-    }
-  }
+function writeStoredCredentials(credentials: StoredCredentials) {
+  mkdirSync(CREDENTIALS_DIR, { recursive: true, mode: 0o700 });
+  // Write to a temp file first so a crash mid-write can't corrupt the credentials file.
+  const tmpPath = `${CREDENTIALS_PATH}.${randomBytes(4).toString('hex')}.tmp`;
+  writeFileSync(tmpPath, JSON.stringify(credentials), { mode: 0o600 });
+  rmSync(CREDENTIALS_PATH, { force: true });
+  writeFileSync(CREDENTIALS_PATH, readFileSync(tmpPath), { mode: 0o600 });
+  rmSync(tmpPath, { force: true });
+}
 
-  const storedApiKey = authStorage.get(PARALLEL_PROVIDER)?.key;
-  if (storedApiKey) {
-    return storedApiKey;
+export async function getParallelApiKey(_ctx: ExtensionContext) {
+  const stored = readStoredCredentials()?.apiKey;
+  if (stored) {
+    return stored;
   }
 
   return process.env.PARALLEL_API_KEY;
 }
 
-export function clearStoredParallelApiKey(ctx: ExtensionContext) {
-  getAuthStorage(ctx).remove(PARALLEL_PROVIDER);
+export function clearStoredParallelApiKey(_ctx: ExtensionContext) {
+  rmSync(CREDENTIALS_PATH, { force: true });
 }
 
-export function storeParallelApiKey(ctx: ExtensionContext, apiKey: string) {
-  getAuthStorage(ctx).set(PARALLEL_PROVIDER, {
-    type: 'api_key',
-    key: apiKey,
-  });
+export function storeParallelApiKey(_ctx: ExtensionContext, apiKey: string) {
+  writeStoredCredentials({ apiKey });
 }
 
 export async function loginWithParallel(ctx: ExtensionContext) {
