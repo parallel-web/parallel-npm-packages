@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { detectReleases } from './detect-releases.mjs';
+
+const fixturePaths = new Set();
+
+after(() => {
+  for (const path of fixturePaths) {
+    rmSync(path, { recursive: true, force: true });
+  }
+});
 
 function git(cwd, ...args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -21,6 +29,7 @@ function writePackage(cwd, directory, manifest) {
 
 function fixture() {
   const cwd = mkdtempSync(join(tmpdir(), 'release-detection-'));
+  fixturePaths.add(cwd);
   git(cwd, 'init', '-b', 'main');
   git(cwd, 'config', 'user.name', 'Release Test');
   git(cwd, 'config', 'user.email', 'release-test@example.test');
@@ -38,14 +47,13 @@ function fixture() {
   return { cwd, before: git(cwd, 'rev-parse', 'HEAD') };
 }
 
-function pushResult(f, logs = []) {
+function pushResult(f) {
   const sha = git(f.cwd, 'rev-parse', 'HEAD');
   return detectReleases({
     cwd: f.cwd,
     eventName: 'push',
     before: f.before,
     sha,
-    log: (message) => logs.push(message),
   });
 }
 

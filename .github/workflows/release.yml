@@ -115,9 +115,21 @@ jobs:
           pnpm run --if-present check:manifest
           pnpm run --if-present check:package
 
-      - name: Publish to npm
-        working-directory: ${{ matrix.dir }}
-        run: npm publish --access public --tag ${{ matrix.npm_tag }}
+      - name: Pack and publish to npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          pack_dir="$(mktemp -d)"
+          trap 'rm -rf "$pack_dir"' EXIT
+
+          pnpm --dir "${{ matrix.dir }}" pack --pack-destination "$pack_dir"
+          artifact="$(find "$pack_dir" -maxdepth 1 -name '*.tgz' -print -quit)"
+          test -n "$artifact"
+
+          node scripts/publish-package.mjs \
+            --package-dir "${{ matrix.dir }}" \
+            --tarball "$artifact" \
+            --tag "${{ matrix.npm_tag }}"
 
       - name: Create tag and GitHub Release
         env:
@@ -149,5 +161,5 @@ jobs:
 
       - name: Summary
         run: |
-          echo "✅ Published @parallel-web/${{ matrix.name }}@${{ matrix.version }} (dist-tag: ${{ matrix.npm_tag }})"
+          echo "✅ Ensured @parallel-web/${{ matrix.name }}@${{ matrix.version }} is published (dist-tag: ${{ matrix.npm_tag }})"
           echo "Tag: ${{ matrix.tag }}"

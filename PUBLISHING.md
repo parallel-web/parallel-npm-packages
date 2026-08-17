@@ -21,9 +21,9 @@ one-time bootstrap for a new npm package and recovery from an interrupted publis
 2. You review and merge the PR.
 3. `.github/workflows/release.yml` runs on the push to `main`. It detects existing public
    packages whose version changed, and for each whose `<package>-vX.Y.Z` git tag does not yet
-   exist, it builds + lints + type-checks + tests that package, publishes it to npm, creates the
-   git tag `<package>-vX.Y.Z`, and cuts a GitHub Release. Adding a package or editing metadata
-   without changing its version does not publish it.
+   exist, it builds + lints + type-checks + tests that package, packs and publishes it to npm,
+   creates the git tag `<package>-vX.Y.Z`, and cuts a GitHub Release. Adding a package or editing
+   metadata without changing its version does not publish it.
 
 ### Per-package git tags
 
@@ -120,6 +120,11 @@ its current `package.json` version. The release detector rejects every other bra
 
 - Actions → **Release** → **Run workflow** → enter the package directory name (e.g.
   `opencode-plugin`).
+
+The workflow packs the package before checking npm. If that exact tarball is already published,
+it verifies the registry integrity and continues with tag and GitHub Release creation without
+publishing again. If the published contents differ or the registry lookup fails, the workflow
+stops before creating the tag.
 
 If the tag already exists the run is a no-op (the package is considered already released); bump
 to a new version with `scripts/release.sh` instead.

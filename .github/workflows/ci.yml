@@ -105,7 +105,7 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --filter @parallel-web/dsh-web-search-parallel... --frozen-lockfile
 
       - name: Run deterministic plugin checks
         run: pnpm --filter @parallel-web/dsh-web-search-parallel check

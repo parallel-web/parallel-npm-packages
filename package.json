@@ -6,8 +6,9 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "test:ci": "pnpm -r test && pnpm run test:release-detection",
+    "test:ci": "pnpm -r test && pnpm run test:release-detection && pnpm run test:release-publishing",
     "test:release-detection": "node --test scripts/detect-releases.test.mjs",
+    "test:release-publishing": "node --test scripts/publish-package.test.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
