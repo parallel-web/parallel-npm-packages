@@ -3,8 +3,8 @@
 ## Reporting a vulnerability
 
 Please report suspected vulnerabilities privately to
-[support@parallel.ai](mailto:support@parallel.ai). Include
-`dsh-web-search-parallel security` in the subject line.
+[security@parallel.ai](mailto:security@parallel.ai). Include
+`dsh-web-search security` in the subject line.
 
 Please include the affected package and DSH versions, a minimal reproduction,
 the expected impact, and any suggested mitigation. Remove API keys, tokens,

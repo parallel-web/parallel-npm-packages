@@ -12,7 +12,7 @@ set -euo pipefail
 #   ./scripts/release.sh <package> 1.2.0     # set an explicit version (X.Y.Z or X.Y.Z-rc.N)
 #
 #   <package> is the directory name under packages/, e.g.:
-#     ai-sdk-tools | dsh-web-search-parallel | opencode-plugin | pi-extension
+#     ai-sdk-tools | dsh-web-search | opencode-plugin | pi-extension
 #
 # What it does:
 #   1. Computes the next version for that package

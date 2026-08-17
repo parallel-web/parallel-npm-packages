@@ -5,4 +5,4 @@
 
 - insert:
     - id: web-search-parallel
-      name: '@parallel-web/dsh-web-search-parallel'
+      name: '@parallel-web/dsh-web-search'

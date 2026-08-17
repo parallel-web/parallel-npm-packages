@@ -58,7 +58,7 @@ importers:
         specifier: ^6.0.0
         version: 6.0.192(zod@4.3.6)
 
-  packages/dsh-web-search-parallel:
+  packages/dsh-web-search:
     dependencies:
       '@deepseek-ai/schemastery':
         specifier: 3.18.1

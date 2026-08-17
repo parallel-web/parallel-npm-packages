@@ -31,7 +31,7 @@ pnpm install --frozen-lockfile
 Run the complete keyless validation suite:
 
 ```sh
-pnpm --filter @parallel-web/dsh-web-search-parallel check
+pnpm --filter @parallel-web/dsh-web-search check
 ```
 
 `check` performs strict type checking, linting, deterministic tests, the
@@ -39,7 +39,7 @@ ESM/type build, manifest validation, and a package-content allowlist check.
 
 `pnpm audit --prod` is monorepo-wide even when pnpm receives a workspace
 filter. Run it separately and inspect whether any reported dependency path
-starts with `packages__dsh-web-search-parallel>`; unrelated advisories in
+starts with `packages__dsh-web-search>`; unrelated advisories in
 another workspace package do not make this package's keyless suite fail.
 
 ## Verify the packed artifact
@@ -48,25 +48,25 @@ Create one fresh tarball and verify its exact contents:
 
 ```sh
 PACK_DIR="$(mktemp -d)"
-pnpm --dir packages/dsh-web-search-parallel pack --pack-destination "$PACK_DIR"
+pnpm --dir packages/dsh-web-search pack --pack-destination "$PACK_DIR"
 PACK_TGZ="$(find "$PACK_DIR" -name '*.tgz' -print -quit)"
-node packages/dsh-web-search-parallel/scripts/verify-packed-artifact.mjs --tarball "$PACK_TGZ"
+node packages/dsh-web-search/scripts/verify-packed-artifact.mjs --tarball "$PACK_TGZ"
 ```
 
 Use a disposable DSH home to prove the complete install lifecycle:
 
 ```sh
 REVIEW_DSH_HOME="$(mktemp -d)"
-DSH_HOME="$REVIEW_DSH_HOME" pnpm --dir packages/dsh-web-search-parallel exec dsh --profile web --dump-config > "$REVIEW_DSH_HOME/before.yml"
-DSH_HOME="$REVIEW_DSH_HOME" pnpm --dir packages/dsh-web-search-parallel exec dsh plugin --profile web add "$PACK_TGZ"
-DSH_HOME="$REVIEW_DSH_HOME" pnpm --dir packages/dsh-web-search-parallel exec dsh --profile web --dump-config > "$REVIEW_DSH_HOME/after.yml"
-PACKAGE_VERSION="$(node -p "require('./packages/dsh-web-search-parallel/package.json').version")"
-node packages/dsh-web-search-parallel/scripts/verify-packed-profile.mjs \
+DSH_HOME="$REVIEW_DSH_HOME" pnpm --dir packages/dsh-web-search exec dsh --profile web --dump-config > "$REVIEW_DSH_HOME/before.yml"
+DSH_HOME="$REVIEW_DSH_HOME" pnpm --dir packages/dsh-web-search exec dsh plugin --profile web add "$PACK_TGZ"
+DSH_HOME="$REVIEW_DSH_HOME" pnpm --dir packages/dsh-web-search exec dsh --profile web --dump-config > "$REVIEW_DSH_HOME/after.yml"
+PACKAGE_VERSION="$(node -p "require('./packages/dsh-web-search/package.json').version")"
+node packages/dsh-web-search/scripts/verify-packed-profile.mjs \
   --dsh-home "$REVIEW_DSH_HOME" \
   --expected-version "$PACKAGE_VERSION"
-DSH_HOME="$REVIEW_DSH_HOME" pnpm --dir packages/dsh-web-search-parallel exec dsh plugin --profile web remove @parallel-web/dsh-web-search-parallel
-DSH_HOME="$REVIEW_DSH_HOME" pnpm --dir packages/dsh-web-search-parallel exec dsh --profile web --dump-config > "$REVIEW_DSH_HOME/removed.yml"
-node packages/dsh-web-search-parallel/scripts/verify-profile-overlay.mjs \
+DSH_HOME="$REVIEW_DSH_HOME" pnpm --dir packages/dsh-web-search exec dsh plugin --profile web remove @parallel-web/dsh-web-search
+DSH_HOME="$REVIEW_DSH_HOME" pnpm --dir packages/dsh-web-search exec dsh --profile web --dump-config > "$REVIEW_DSH_HOME/removed.yml"
+node packages/dsh-web-search/scripts/verify-profile-overlay.mjs \
   --before "$REVIEW_DSH_HOME/before.yml" \
   --after "$REVIEW_DSH_HOME/after.yml" \
   --removed "$REVIEW_DSH_HOME/removed.yml"
@@ -84,7 +84,7 @@ it sends one real request to Parallel Search and may consume account balance.
 Export `PARALLEL_API_KEY` in the shell first, then run:
 
 ```sh
-pnpm --filter @parallel-web/dsh-web-search-parallel test:e2e
+pnpm --filter @parallel-web/dsh-web-search test:e2e
 ```
 
 Do not retry a failed live test automatically. Diagnose the failure first and

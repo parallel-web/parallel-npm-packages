@@ -53,7 +53,7 @@ assert.deepEqual(one(after, 'web'), {
 });
 assert.deepEqual(one(after, 'web-search-parallel'), {
   id: 'web-search-parallel',
-  name: '@parallel-web/dsh-web-search-parallel',
+  name: '@parallel-web/dsh-web-search',
 });
 
 const toolBefore = one(before, 'tool-web');

@@ -1,5 +1,5 @@
 {
-  "name": "@parallel-web/dsh-web-search-parallel",
+  "name": "@parallel-web/dsh-web-search",
   "description": "Parallel Search provider for DeepSeek Harness",
   "version": "0.1.0-rc.0",
   "author": "Parallel Web",
@@ -33,7 +33,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/parallel-web/parallel-npm-packages.git",
-    "directory": "packages/dsh-web-search-parallel"
+    "directory": "packages/dsh-web-search"
   },
   "keywords": [
     "deepseek-harness",

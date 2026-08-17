@@ -37,13 +37,13 @@ assert.deepEqual(entries, [
 ]);
 
 const manifest = JSON.parse(tar(['-xOzf', tarball, 'package/package.json']));
-assert.equal(manifest.name, '@parallel-web/dsh-web-search-parallel');
+assert.equal(manifest.name, '@parallel-web/dsh-web-search');
 assert.match(manifest.version, /^\d+\.\d+\.\d+(?:-rc\.\d+)?$/);
 assert.equal(manifest.author, 'Parallel Web');
 assert.deepEqual(manifest.repository, {
   type: 'git',
   url: 'git+https://github.com/parallel-web/parallel-npm-packages.git',
-  directory: 'packages/dsh-web-search-parallel',
+  directory: 'packages/dsh-web-search',
 });
 assert.equal(manifest.dsh?.bundle?.patch, './cordis.patch.yml');
 assert.equal(manifest.dependencies['parallel-web'], '1.3.0');

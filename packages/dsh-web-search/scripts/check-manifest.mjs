@@ -10,7 +10,7 @@ const rootManifest = JSON.parse(
   await readFile(new URL('../../../package.json', import.meta.url), 'utf8')
 );
 
-assert.equal(manifest.name, '@parallel-web/dsh-web-search-parallel');
+assert.equal(manifest.name, '@parallel-web/dsh-web-search');
 assert.match(manifest.version, /^\d+\.\d+\.\d+(?:-rc\.\d+)?$/);
 assert.equal(manifest.author, 'Parallel Web');
 assert.equal(manifest.type, 'module');
@@ -18,7 +18,7 @@ assert.equal(manifest.license, 'MIT');
 assert.deepEqual(manifest.repository, {
   type: 'git',
   url: 'git+https://github.com/parallel-web/parallel-npm-packages.git',
-  directory: 'packages/dsh-web-search-parallel',
+  directory: 'packages/dsh-web-search',
 });
 assert.equal(manifest.packageManager, undefined);
 assert.equal(rootManifest.packageManager, 'pnpm@11.21.0');
@@ -77,7 +77,7 @@ assert.deepEqual(patch, [
     insert: [
       {
         id: 'web-search-parallel',
-        name: '@parallel-web/dsh-web-search-parallel',
+        name: '@parallel-web/dsh-web-search',
       },
     ],
   },

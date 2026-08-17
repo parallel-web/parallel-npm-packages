@@ -47,7 +47,7 @@ Install the plugin into the `web` profile:
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.0-rc.6 \
   plugin --profile web add \
-  @parallel-web/dsh-web-search-parallel@rc
+  @parallel-web/dsh-web-search@rc
 ```
 
 The `@rc` suffix installs the current release candidate. After version `0.1.0`
@@ -148,7 +148,7 @@ The plugin always sends requests to `https://api.parallel.ai` and ignores
 
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.0-rc.6 \
-  plugin --profile web remove @parallel-web/dsh-web-search-parallel
+  plugin --profile web remove @parallel-web/dsh-web-search
 ```
 
 Restart Harness after removing the plugin.
