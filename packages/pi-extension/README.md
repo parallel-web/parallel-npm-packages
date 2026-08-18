@@ -26,8 +26,9 @@ Auth resolution order (owned by Pi, not the extension):
 1. The credential Pi stored for provider `parallel`
 2. `PARALLEL_API_KEY`
 
-`/logout parallel` removes the stored credential, and
-`pi auth check --provider parallel` reports whether it is configured.
+Run `/parallel-login` inside Pi to check whether Parallel is configured. To
+remove a stored credential, run `/logout` and select Parallel. Environment
+variables are not affected by Pi's logout flow.
 
 Requires `@earendil-works/pi-coding-agent` 0.83.0 or newer.
 
@@ -169,7 +170,7 @@ Inside Pi, run:
 
 That opens the browser for Parallel OAuth. On success, Pi stores the API key in
 its auth store under `parallel`. Run `/parallel-login` to see the current status,
-and `/logout parallel` to remove the credential.
+and run `/logout` and select Parallel to remove the stored credential.
 
 ### Use Environment Variable Instead
 

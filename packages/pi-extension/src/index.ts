@@ -130,8 +130,11 @@ export default function (pi: ExtensionAPI) {
 
       const status = getParallelAuthStatus(ctx);
       const source = status.label ?? status.source ?? 'PARALLEL_API_KEY';
+      const guidance = status.configured
+        ? 'Run `/login parallel` to replace the stored credential, or `/logout` and select Parallel to remove it.'
+        : 'Run `/login parallel` to store a credential, or unset PARALLEL_API_KEY to remove the current one.';
       ctx.ui.notify(
-        `Parallel is authenticated (${source}). Run \`/login parallel\` to replace the credential, or \`/logout parallel\` to remove it.`,
+        `Parallel is authenticated (${source}). ${guidance}`,
         'info'
       );
     },

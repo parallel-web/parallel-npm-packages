@@ -77,9 +77,9 @@ async function resolveParallelAuth(input: {
 
 /**
  * Parallel's provider owns both the shared credential boundary and the static
- * research model. Pi owns auth.json, `/login parallel`, `/logout parallel`,
- * and the `PARALLEL_API_KEY` fallback; both web tools and the model reuse that
- * resolved credential without adding another auth concept.
+ * research model. Pi owns auth.json, `/login parallel`, the `/logout` provider
+ * picker, and the `PARALLEL_API_KEY` fallback; both web tools and the model
+ * reuse that resolved credential without adding another auth concept.
  */
 function createParallelProvider(): Provider {
   return {

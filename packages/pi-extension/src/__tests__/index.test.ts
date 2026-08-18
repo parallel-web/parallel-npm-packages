@@ -239,6 +239,10 @@ describe('@parallel-web/pi-extension', () => {
       expect.stringContaining('authenticated (stored)'),
       'info'
     );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining('`/logout` and select Parallel'),
+      'info'
+    );
   });
 
   it('parallel-login should recognize a key that only PARALLEL_API_KEY provides', async () => {
@@ -258,6 +262,10 @@ describe('@parallel-web/pi-extension', () => {
 
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       expect.stringContaining('authenticated (PARALLEL_API_KEY)'),
+      'info'
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining('unset PARALLEL_API_KEY'),
       'info'
     );
   });
