@@ -1,0 +1,12 @@
+- insert:
+    - id: subagent-parallel-responses
+      name: '@parallel-web/dsh-responses-subagent'
+
+    - id: tool-subagent-parallel-responses
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: parallel-responses
+        toolName: parallel_research
+        enableRunInBackground: false
+        backgroundMode: one-shot
+        maxDepth: provider-managed
