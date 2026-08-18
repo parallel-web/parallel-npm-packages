@@ -8,8 +8,13 @@ import type {
   AuthResult,
   Provider,
   ProviderAuthInteraction,
+  SimpleStreamOptions,
 } from '@earendil-works/pi-ai';
 import { loginWithParallel as runParallelOAuth } from '@parallel-web/oauth';
+import {
+  PARALLEL_RESEARCH_MODEL,
+  streamParallelResponses,
+} from './parallel-responses';
 
 /** Provider id under which Pi stores the Parallel credential in its auth store. */
 export const PARALLEL_PROVIDER = 'parallel';
@@ -87,12 +92,16 @@ function createParallelProvider(): Provider {
         resolve: resolveParallelAuth,
       },
     },
-    getModels: () => [],
-    stream() {
-      throw new Error('The Parallel provider does not serve models.');
+    getModels: () => [PARALLEL_RESEARCH_MODEL],
+    stream(model, context, options) {
+      return streamParallelResponses(
+        model,
+        context,
+        options as SimpleStreamOptions
+      );
     },
-    streamSimple() {
-      throw new Error('The Parallel provider does not serve models.');
+    streamSimple(model, context, options) {
+      return streamParallelResponses(model, context, options);
     },
   };
 }

@@ -1,7 +1,7 @@
 {
   "name": "@parallel-web/pi-extension",
   "version": "1.2.0",
-  "description": "Add web search and web fetch to your pi agent",
+  "description": "Add Parallel web tools and cited research to your pi agent",
   "author": "Parallel Web",
   "license": "MIT",
   "type": "module",
@@ -9,10 +9,16 @@
     "image": "https://assets.parallel.ai/white-parallel-avatar-540.png",
     "extensions": [
       "./dist/index.js"
-    ]
+    ],
+    "subagents": {
+      "agents": [
+        "./agents"
+      ]
+    }
   },
   "files": [
     "dist",
+    "agents",
     "package.json",
     "README.md"
   ],
@@ -41,6 +47,8 @@
     "pi agent",
     "extension",
     "parallel",
+    "research",
+    "subagents",
     "web",
     "search",
     "fetch",

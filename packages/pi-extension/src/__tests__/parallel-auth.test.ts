@@ -56,12 +56,21 @@ describe('parallel-auth', () => {
     } = await import('../parallel-auth.js'));
   });
 
-  it('registers a Parallel provider that serves no models', () => {
+  it('registers a Parallel provider with one Responses research model', () => {
     const provider = registerProvider();
 
     expect(provider.id).toBe('parallel');
     expect(provider.name).toBe('Parallel');
-    expect(provider.getModels()).toEqual([]);
+    expect(provider.getModels()).toEqual([
+      expect.objectContaining({
+        id: 'research',
+        name: 'Parallel Research',
+        api: 'parallel-responses',
+        provider: 'parallel',
+        reasoning: true,
+        input: ['text'],
+      }),
+    ]);
     expect(provider.auth.apiKey).toBeDefined();
     expect(provider.auth.oauth).toBeUndefined();
   });
