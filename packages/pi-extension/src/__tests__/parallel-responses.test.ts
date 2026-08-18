@@ -229,6 +229,48 @@ describe('Parallel Responses model', () => {
     }
   );
 
+  it('honors an explicit caller-owned payload replacement', async () => {
+    const fetchMock = vi.fn(async () => response(completedResponse()));
+    const replacement = {
+      model: 'parallel',
+      input: 'Trusted caller replacement.',
+      reasoning: { effort: 'low' },
+      stream: false,
+    };
+
+    await collect({
+      apiKey: 'test-api-key',
+      fetch: fetchMock,
+      onPayload: () => replacement,
+    });
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual(replacement);
+  });
+
+  it('does not fall back to history for a non-textual latest task', async () => {
+    const fetchMock = vi.fn();
+    const context = researchContext();
+    context.messages.push({
+      role: 'user',
+      content: [
+        { type: 'image', data: 'latest-image-only', mimeType: 'image/png' },
+      ],
+      timestamp: 3,
+    });
+
+    const { result } = await collect(
+      { apiKey: 'test-api-key', fetch: fetchMock },
+      context
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.stopReason).toBe('error');
+    expect(result.errorMessage).toBe(
+      'Parallel Research requires a non-empty textual user task.'
+    );
+  });
+
   it('fails oversized input before making a request', async () => {
     const fetchMock = vi.fn();
     const context = researchContext();

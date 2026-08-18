@@ -89,6 +89,11 @@ environment variables, Pi tools, session state, or git worktree data. The
 agent cannot read or edit the local filesystem. A worktree therefore adds no
 research capability and should normally remain disabled.
 
+These data boundaries describe normal `parallel-research` runs. Pi's low-level
+provider API also exposes `onPayload` and custom-header hooks to trusted caller
+code. A caller that deliberately uses those hooks to replace or extend the
+request owns the resulting data boundary.
+
 Parallel Responses accepts at most 20,000 combined instruction and input
 characters. The adapter fails before making a request when that boundary is
 exceeded. It renders the returned URL citations as a deduplicated Markdown

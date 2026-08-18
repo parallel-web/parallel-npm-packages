@@ -15,6 +15,9 @@ export const PARALLEL_RESPONSES_URL = 'https://api.parallel.ai/v1/responses';
 export const PARALLEL_RESPONSES_MAX_INPUT_CHARS = 20_000;
 export const PARALLEL_RESPONSES_DEFAULT_TIMEOUT_MS = 120_000;
 
+const RESPONSE_USAGE_CHARS_PER_TOKEN = 4;
+const RESEARCH_MAX_OUTPUT_TOKENS = 32_000;
+
 export const PARALLEL_RESEARCH_MODEL: Model<typeof PARALLEL_RESPONSES_API> = {
   id: 'research',
   name: 'Parallel Research',
@@ -33,10 +36,17 @@ export const PARALLEL_RESEARCH_MODEL: Model<typeof PARALLEL_RESPONSES_API> = {
   },
   input: ['text'],
   // Parallel Responses is billed per successful call, not per token. The
-  // custom stream records the fixed call price in usage.cost.total.
+  // custom stream records the fixed call price in usage.cost.total. Pi's
+  // contextWindow includes input plus output tokens, while Responses limits
+  // input in characters and reports usage with a four-chars-per-token
+  // estimate. Keep that estimate in catalog metadata; the explicit character
+  // check below remains the authoritative request limit.
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  contextWindow: PARALLEL_RESPONSES_MAX_INPUT_CHARS,
-  maxTokens: 32_000,
+  contextWindow:
+    Math.ceil(
+      PARALLEL_RESPONSES_MAX_INPUT_CHARS / RESPONSE_USAGE_CHARS_PER_TOKEN
+    ) + RESEARCH_MAX_OUTPUT_TOKENS,
+  maxTokens: RESEARCH_MAX_OUTPUT_TOKENS,
 };
 
 type ResearchEffort = 'low' | 'medium' | 'high';
@@ -94,6 +104,11 @@ function latestUserText(context: Context): string {
             .join('\n');
 
     if (text.trim()) return text;
+
+    // The latest user turn is the task boundary. Never fall back to an older
+    // user message when the current task is empty or non-textual, because that
+    // would turn parent history into a new research request.
+    break;
   }
 
   throw new Error('Parallel Research requires a non-empty textual user task.');
@@ -313,6 +328,9 @@ export function streamParallelResponses(
         reasoning: { effort },
         stream: false,
       };
+      // Pi exposes onPayload as an explicit inspect-or-replace hook. Normal
+      // pi-subagents use does not replace this minimal body; a low-level caller
+      // that does return a replacement owns the resulting data boundary.
       const replacement = await options?.onPayload?.(payload, model);
       if (replacement !== undefined) payload = replacement;
 

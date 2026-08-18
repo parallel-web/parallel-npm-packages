@@ -69,6 +69,8 @@ describe('parallel-auth', () => {
         provider: 'parallel',
         reasoning: true,
         input: ['text'],
+        contextWindow: 37_000,
+        maxTokens: 32_000,
       }),
     ]);
     expect(provider.auth.apiKey).toBeDefined();

@@ -76,10 +76,10 @@ async function resolveParallelAuth(input: {
 }
 
 /**
- * A provider that exists purely to carry Parallel's credential. Pi owns the
- * storage (auth.json), the `/login parallel` and `/logout parallel` flows, and
- * the `PARALLEL_API_KEY` fallback; the extension only reads the resolved key.
- * It serves no models, so the stream entry points are never reached.
+ * Parallel's provider owns both the shared credential boundary and the static
+ * research model. Pi owns auth.json, `/login parallel`, `/logout parallel`,
+ * and the `PARALLEL_API_KEY` fallback; both web tools and the model reuse that
+ * resolved credential without adding another auth concept.
  */
 function createParallelProvider(): Provider {
   return {
