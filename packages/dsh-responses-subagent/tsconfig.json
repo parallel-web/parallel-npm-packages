@@ -16,10 +16,5 @@
     "allowImportingTsExtensions": true,
     "skipLibCheck": true
   },
-  "include": [
-    "src/**/*.ts",
-    "tests/**/*.ts",
-    "tsdown.config.ts",
-    "vitest.e2e.config.ts"
-  ]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "tsdown.config.ts"]
 }

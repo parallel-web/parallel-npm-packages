@@ -1,9 +1,8 @@
 # Publishing Guide
 
-This monorepo publishes five npm packages, each versioned, tagged, and released **independently**:
+This monorepo publishes four npm packages, each versioned, tagged, and released **independently**:
 
 - `@parallel-web/ai-sdk-tools` — `packages/ai-sdk-tools`
-- `@parallel-web/dsh-responses-subagent` — `packages/dsh-responses-subagent`
 - `@parallel-web/dsh-web-search` — `packages/dsh-web-search`
 - `@parallel-web/opencode-plugin` — `packages/opencode-plugin`
 - `@parallel-web/pi-extension` — `packages/pi-extension`
@@ -58,13 +57,12 @@ the reviewed bootstrap release manually from a clean, updated `main` checkout:
 
 ```bash
 pnpm install --frozen-lockfile
-PACKAGE=dsh-responses-subagent
-pnpm --filter "@parallel-web/$PACKAGE" check
+pnpm --filter @parallel-web/dsh-web-search check
 BOOTSTRAP_DIR="$(mktemp -d)"
-pnpm --dir "packages/$PACKAGE" pack --pack-destination "$BOOTSTRAP_DIR"
+pnpm --dir packages/dsh-web-search pack --pack-destination "$BOOTSTRAP_DIR"
 BOOTSTRAP_TARBALL="$(find "$BOOTSTRAP_DIR" -name '*.tgz' -print -quit)"
 npm publish "$BOOTSTRAP_TARBALL" --access public --tag rc
-npm view "@parallel-web/$PACKAGE" dist-tags --json
+npm view @parallel-web/dsh-web-search dist-tags --json
 ```
 
 The npm owner should inspect the tarball listing before the publish and complete npm's 2FA prompt.

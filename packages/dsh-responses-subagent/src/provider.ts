@@ -136,37 +136,6 @@ export function researchPrompt(request: ResolvedSubagentStartRequest): string {
   return prompt;
 }
 
-function responseRequest(prompt: string): RequestInit {
-  return {
-    method: 'POST',
-    headers: {
-      Accept: 'text/event-stream',
-      Authorization: '',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'parallel',
-      input: prompt,
-      reasoning: { effort: 'medium' },
-      stream: true,
-    }),
-    redirect: 'error',
-  };
-}
-
-function eventData(frame: string): { event?: string; data?: string } {
-  let event: string | undefined;
-  const data: string[] = [];
-  for (const line of frame.split(/\r?\n/u)) {
-    if (line.startsWith('event:')) event = line.slice(6).trimStart();
-    if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /u, ''));
-  }
-  return {
-    ...(event === undefined ? {} : { event }),
-    ...(data.length === 0 ? {} : { data: data.join('\n') }),
-  };
-}
-
 function citationLine(title: string | undefined, url: string): string {
   const compactTitle = title?.replace(/\s+/gu, ' ').trim();
   return compactTitle === undefined || compactTitle.length === 0
@@ -174,9 +143,18 @@ function citationLine(title: string | undefined, url: string): string {
     : `- ${compactTitle} — ${url}`;
 }
 
-function completedResult(payload: Record<string, unknown>): SubagentResult {
-  const response = payload.response;
-  if (!isRecord(response) || !Array.isArray(response.output)) {
+function completedResult(payload: unknown): SubagentResult {
+  if (!isRecord(payload) || payload.status !== 'completed') {
+    if (isRecord(payload) && payload.status === 'failed') {
+      throw new Error(
+        'dsh-responses-subagent: Parallel Responses reported response.failed'
+      );
+    }
+    throw new TypeError(
+      'dsh-responses-subagent: Parallel Responses response was not completed'
+    );
+  }
+  if (!Array.isArray(payload.output)) {
     throw new TypeError(
       'dsh-responses-subagent: completed response has no output array'
     );
@@ -184,7 +162,7 @@ function completedResult(payload: Record<string, unknown>): SubagentResult {
 
   const answerParts: string[] = [];
   const citations = new Map<string, string | undefined>();
-  for (const item of response.output) {
+  for (const item of payload.output) {
     if (!isRecord(item) || item.type !== 'message') continue;
     if (!Array.isArray(item.content)) {
       throw new TypeError(
@@ -250,76 +228,6 @@ function completedResult(payload: Record<string, unknown>): SubagentResult {
   return { output: [{ type: 'text', text }], stopReason: 'completed' };
 }
 
-function terminalResult(frame: string): SubagentResult | undefined {
-  const parsed = eventData(frame);
-  if (parsed.data === undefined) return undefined;
-  let value: unknown;
-  try {
-    value = JSON.parse(parsed.data);
-  } catch (error: unknown) {
-    throw new TypeError('dsh-responses-subagent: malformed SSE data', {
-      cause: error,
-    });
-  }
-  if (!isRecord(value) || typeof value.type !== 'string') {
-    throw new TypeError('dsh-responses-subagent: malformed SSE event');
-  }
-  if (parsed.event !== undefined && parsed.event !== value.type) {
-    throw new TypeError(
-      'dsh-responses-subagent: SSE event name does not match its payload'
-    );
-  }
-  if (value.type === 'response.completed') return completedResult(value);
-  if (value.type === 'response.failed') {
-    throw new Error(
-      'dsh-responses-subagent: Parallel Responses reported response.failed'
-    );
-  }
-  return undefined;
-}
-
-async function readTerminal(response: Response): Promise<SubagentResult> {
-  if (!response.ok) {
-    throw new Error(
-      `dsh-responses-subagent: Parallel Responses returned HTTP ${response.status}`
-    );
-  }
-  if (response.body === null) {
-    throw new Error(
-      'dsh-responses-subagent: Parallel Responses returned no body'
-    );
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  try {
-    for (;;) {
-      const chunk = await reader.read();
-      buffer += decoder.decode(chunk.value, { stream: !chunk.done });
-      for (;;) {
-        const delimiter = /\r?\n\r?\n/u.exec(buffer);
-        if (delimiter === null) break;
-        const frame = buffer.slice(0, delimiter.index);
-        buffer = buffer.slice(delimiter.index + delimiter[0].length);
-        const terminal = terminalResult(frame);
-        if (terminal !== undefined) return terminal;
-      }
-      if (chunk.done) break;
-    }
-    if (buffer.trim().length > 0) {
-      const terminal = terminalResult(buffer);
-      if (terminal !== undefined) return terminal;
-    }
-    throw new Error(
-      'dsh-responses-subagent: Parallel Responses stream ended without a terminal event'
-    );
-  } finally {
-    await reader.cancel();
-    reader.releaseLock();
-  }
-}
-
 /** Construction inputs kept private from Cordis configuration. */
 export interface ParallelResponsesProviderOptions {
   readonly apiKey: string;
@@ -364,10 +272,7 @@ export class ParallelResponsesProvider implements SubagentProvider {
       cancelled = true;
       controller.abort(cancellationError('during the remote run'));
     };
-    const onAbort = (): void => {
-      requestCancel();
-    };
-    request.signal.addEventListener('abort', onAbort, { once: true });
+    request.signal.addEventListener('abort', requestCancel, { once: true });
 
     let timedOut = false;
     const timer = setTimeout(() => {
@@ -381,15 +286,27 @@ export class ParallelResponsesProvider implements SubagentProvider {
 
     const result: Promise<SubagentResult> = (async () => {
       try {
-        const init = responseRequest(prompt);
-        const headers = new Headers(init.headers);
-        headers.set('Authorization', `Bearer ${this.apiKey}`);
         const response = await this.fetch(PARALLEL_RESPONSES_URL, {
-          ...init,
-          headers,
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'parallel',
+            input: prompt,
+            reasoning: { effort: 'medium' },
+            stream: false,
+          }),
+          redirect: 'error',
           signal: controller.signal,
         });
-        const terminal = await readTerminal(response);
+        if (!response.ok) {
+          throw new Error(
+            `dsh-responses-subagent: Parallel Responses returned HTTP ${response.status}`
+          );
+        }
+        const terminal = completedResult(await response.json());
         if (cancelled) return { output: [], stopReason: 'aborted' };
         if (timedOut) {
           throw new Error(
@@ -420,7 +337,7 @@ export class ParallelResponsesProvider implements SubagentProvider {
         };
       } finally {
         clearTimeout(timer);
-        request.signal.removeEventListener('abort', onAbort);
+        request.signal.removeEventListener('abort', requestCancel);
         release();
       }
     })();
@@ -432,7 +349,7 @@ export class ParallelResponsesProvider implements SubagentProvider {
       result,
       dispose: (): Promise<void> => {
         if (disposal !== undefined) return disposal;
-        request.signal.removeEventListener('abort', onAbort);
+        request.signal.removeEventListener('abort', requestCancel);
         requestCancel();
         disposal = result.then(() => undefined);
         return disposal;

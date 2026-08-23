@@ -1,6 +1,5 @@
 import { Context } from '@deepseek-ai/cordis';
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment';
-import type { ContentBlock } from '@deepseek-ai/dsh-llm';
 import SubagentRuntime, {
   type ResolvedSubagentStartRequest,
 } from '@deepseek-ai/dsh-subagent';
@@ -12,6 +11,8 @@ import {
   ParallelResponsesProvider,
   researchPrompt,
 } from '../src/provider.ts';
+
+type ContentBlock = ResolvedSubagentStartRequest['prompt'][number];
 
 function request(
   prompt: ContentBlock[] = [{ type: 'text', text: 'research this exactly' }],
@@ -25,15 +26,11 @@ function request(
   };
 }
 
-function sseEvent(type: string, response: Record<string, unknown>): string {
-  return `event: ${type}\ndata: ${JSON.stringify({ type, response })}\n\n`;
-}
-
 function completed(
   text = 'The researched answer.',
   annotations: unknown[] = []
-): string {
-  return sseEvent('response.completed', {
+): Response {
+  return Response.json({
     status: 'completed',
     output: [
       {
@@ -42,19 +39,6 @@ function completed(
       },
     ],
   });
-}
-
-function streamResponse(...chunks: string[]): Response {
-  const encoder = new TextEncoder();
-  return new Response(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
-        controller.close();
-      },
-    }),
-    { status: 200, headers: { 'Content-Type': 'text/event-stream' } }
-  );
 }
 
 function abortableFetch() {
@@ -77,7 +61,7 @@ afterEach(() => {
 
 describe('Parallel Responses request and output', () => {
   it('sends one fixed request and renders deduplicated title and URL citations', async () => {
-    const event = completed('Evidence-backed answer.', [
+    const response = completed('Evidence-backed answer.', [
       {
         type: 'url_citation',
         title: 'Source A',
@@ -90,15 +74,7 @@ describe('Parallel Responses request and output', () => {
       },
       { type: 'url_citation', url: 'https://b.test/data' },
     ]);
-    const fetch = vi
-      .fn()
-      .mockResolvedValue(
-        streamResponse(
-          'event: response.created\r\ndata: {"type":"response.created"}\r\n\r\n',
-          event.slice(0, 19),
-          event.slice(19)
-        )
-      );
+    const fetch = vi.fn().mockResolvedValue(response);
     const provider = new ParallelResponsesProvider({
       apiKey: 'parallel_test_provider',
       fetch,
@@ -127,11 +103,11 @@ describe('Parallel Responses request and output', () => {
       model: 'parallel',
       input: '  unchanged prompt  ',
       reasoning: { effort: 'medium' },
-      stream: true,
+      stream: false,
     });
     const headers = new Headers(init?.headers);
     expect(headers.get('authorization')).toBe('Bearer parallel_test_provider');
-    expect(headers.get('accept')).toBe('text/event-stream');
+    expect(headers.get('content-type')).toBe('application/json');
     expect(run.localAgent).toBeUndefined();
     const firstDispose = run.dispose();
     expect(run.dispose()).toBe(firstDispose);
@@ -160,13 +136,11 @@ describe('Parallel Responses request and output', () => {
 
   it.each([
     new Response('denied', { status: 403 }),
-    streamResponse(sseEvent('response.failed', { status: 'failed' })),
-    streamResponse('event: response.completed\ndata: not-json\n\n'),
-    streamResponse(
-      'event: response.created\ndata: {"type":"response.created"}\n\n'
-    ),
+    Response.json({ status: 'failed' }),
+    new Response('not-json'),
+    Response.json({ status: 'completed', output: [] }),
   ])(
-    'settles HTTP, in-band, and malformed stream failures',
+    'settles HTTP, API, malformed JSON, and empty-answer failures',
     async (response) => {
       const fetch = vi.fn().mockResolvedValue(response);
       const provider = new ParallelResponsesProvider({
