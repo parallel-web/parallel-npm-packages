@@ -85,12 +85,13 @@ jobs:
         run: pnpm build
 
   dsh-compatibility:
-    name: DSH Compatibility (Node ${{ matrix.node }})
+    name: DSH Compatibility (${{ matrix.package }}, Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         node: [22.19.0, 24, 26]
+        package: [dsh-web-search, dsh-responses-subagent]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -105,10 +106,10 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --filter @parallel-web/dsh-web-search... --frozen-lockfile
+        run: pnpm install --filter "@parallel-web/${{ matrix.package }}..." --frozen-lockfile
 
       - name: Run deterministic plugin checks
-        run: pnpm --filter @parallel-web/dsh-web-search check
+        run: pnpm --filter "@parallel-web/${{ matrix.package }}" check
 
       - name: Verify packed DSH profile lifecycle
         shell: bash
@@ -118,26 +119,26 @@ jobs:
           dsh_home="$(mktemp -d)"
           trap 'rm -rf "$pack_dir" "$dsh_home"' EXIT
 
-          pnpm --dir packages/dsh-web-search pack --pack-destination "$pack_dir"
+          pnpm --dir "packages/${{ matrix.package }}" pack --pack-destination "$pack_dir"
           artifact="$(find "$pack_dir" -name '*.tgz' -print -quit)"
-          version="$(node -p "require('./packages/dsh-web-search/package.json').version")"
+          version="$(node -p "require('./packages/${{ matrix.package }}/package.json').version")"
 
-          node packages/dsh-web-search/scripts/verify-packed-artifact.mjs \
+          node "packages/${{ matrix.package }}/scripts/verify-packed-artifact.mjs" \
             --tarball "$artifact"
-          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
+          DSH_HOME="$dsh_home" pnpm --dir "packages/${{ matrix.package }}" exec dsh \
             --profile web --dump-config > "$dsh_home/before.yml"
-          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
+          DSH_HOME="$dsh_home" pnpm --dir "packages/${{ matrix.package }}" exec dsh \
             plugin --profile web add "$artifact"
-          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
+          DSH_HOME="$dsh_home" pnpm --dir "packages/${{ matrix.package }}" exec dsh \
             --profile web --dump-config > "$dsh_home/after.yml"
-          node packages/dsh-web-search/scripts/verify-packed-profile.mjs \
+          node "packages/${{ matrix.package }}/scripts/verify-packed-profile.mjs" \
             --dsh-home "$dsh_home" \
             --expected-version "$version"
-          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
-            plugin --profile web remove @parallel-web/dsh-web-search
-          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
+          DSH_HOME="$dsh_home" pnpm --dir "packages/${{ matrix.package }}" exec dsh \
+            plugin --profile web remove "@parallel-web/${{ matrix.package }}"
+          DSH_HOME="$dsh_home" pnpm --dir "packages/${{ matrix.package }}" exec dsh \
             --profile web --dump-config > "$dsh_home/removed.yml"
-          node packages/dsh-web-search/scripts/verify-profile-overlay.mjs \
+          node "packages/${{ matrix.package }}/scripts/verify-profile-overlay.mjs" \
             --before "$dsh_home/before.yml" \
             --after "$dsh_home/after.yml" \
             --removed "$dsh_home/removed.yml"

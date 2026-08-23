@@ -2,7 +2,6 @@
   "name": "@parallel-web/dsh-responses-subagent",
   "description": "Parallel Responses research subagent for DeepSeek Harness",
   "version": "0.1.0-rc.0",
-  "private": true,
   "author": "Parallel Web",
   "license": "MIT",
   "type": "module",
@@ -25,6 +24,9 @@
     "cordis.patch.yml",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/parallel-web/parallel-npm-packages.git",
@@ -43,9 +45,11 @@
   },
   "scripts": {
     "build": "tsdown",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build && pnpm run check:manifest && pnpm run check:package",
+    "check:manifest": "node scripts/check-manifest.mjs",
+    "check:package": "node scripts/check-package.mjs",
     "clean": "rm -rf lib",
-    "lint": "oxlint src tests tsdown.config.ts",
+    "lint": "oxlint src tests scripts tsdown.config.ts",
     "prepare": "pnpm run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
@@ -62,11 +66,14 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/cordis-plugin-include": "1.0.6",
+    "@deepseek-ai/dsh": "0.1.0-rc.6",
     "@deepseek-ai/dsh-launch-environment": "0.1.0-rc.6",
     "@deepseek-ai/dsh-session": "0.1.0-rc.6",
     "@deepseek-ai/dsh-subagent": "0.1.0-rc.6",
     "@deepseek-ai/dsh-tool-subagent": "0.1.0-rc.6",
     "@types/node": "26.2.0",
+    "js-yaml": "4.2.0",
     "oxlint": "1.76.0",
     "tsdown": "0.22.2",
     "typescript": "6.0.3",

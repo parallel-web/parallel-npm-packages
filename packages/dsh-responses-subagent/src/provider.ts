@@ -17,8 +17,22 @@ import {
 export const PARALLEL_RESPONSES_PROVIDER_ID = 'parallel-responses';
 export const PARALLEL_RESPONSES_URL = 'https://api.parallel.ai/v1/responses';
 export const PARALLEL_RESPONSES_TIMEOUT_MS = 10 * 60_000;
+export const PARALLEL_RESPONSES_MAX_INPUT_CHARS = 20_000;
+export const PARALLEL_RESPONSES_EFFORTS = ['low', 'medium', 'high'] as const;
+export const DEFAULT_MAX_ACTIVE_RUNS = 2;
+export const MAX_ACTIVE_RUN_LIMIT = 20;
+export const PARALLEL_RESEARCH_INSTRUCTIONS =
+  'You are an autonomous live-web research specialist. Answer the actual ' +
+  'research question with current evidence, prioritizing official ' +
+  'documentation, original announcements, direct repository evidence, and ' +
+  'other primary sources. Cover every requested entity and constraint. Verify ' +
+  'dates, versions, prices, and units, distinguish confirmed facts from ' +
+  'uncertainty, and cite direct supporting source URLs. Return a complete ' +
+  'synthesized answer for the parent agent. Do not reject a valid research ' +
+  'question merely because its wording mentions JSON or an output schema.';
 
-const MAX_ACTIVE_RUNS = 2;
+export type ParallelResponsesEffort =
+  (typeof PARALLEL_RESPONSES_EFFORTS)[number];
 
 type Fetch = (
   input: string | URL | Request,
@@ -36,9 +50,11 @@ class Capacity {
   private active = 0;
   private readonly waiters: CapacityWaiter[] = [];
 
+  constructor(private readonly limit: number) {}
+
   async acquire(signal: AbortSignal): Promise<() => void> {
     if (signal.aborted) throw cancellationError('before capacity admission');
-    if (this.active < MAX_ACTIVE_RUNS) {
+    if (this.active < this.limit) {
       this.active += 1;
       return this.releaseOnce();
     }
@@ -131,6 +147,14 @@ export function researchPrompt(request: ResolvedSubagentStartRequest): string {
   if (prompt.trim().length === 0) {
     throw new Error(
       'dsh-responses-subagent: the research prompt must not be empty'
+    );
+  }
+  if (
+    prompt.length + PARALLEL_RESEARCH_INSTRUCTIONS.length + 1 >
+    PARALLEL_RESPONSES_MAX_INPUT_CHARS
+  ) {
+    throw new Error(
+      `dsh-responses-subagent: the research prompt and instructions exceed ${PARALLEL_RESPONSES_MAX_INPUT_CHARS.toLocaleString('en-US')} characters`
     );
   }
   return prompt;
@@ -231,6 +255,8 @@ function completedResult(payload: unknown): SubagentResult {
 /** Construction inputs kept private from Cordis configuration. */
 export interface ParallelResponsesProviderOptions {
   readonly apiKey: string;
+  readonly effort?: ParallelResponsesEffort;
+  readonly maxConcurrentRuns?: number;
   readonly fetch?: Fetch;
   /** Safe diagnostic sink for failures flattened into an error result. */
   readonly onError?: (error: Error) => void;
@@ -243,14 +269,34 @@ export class ParallelResponsesProvider implements SubagentProvider {
   readonly inheritsParentContext = false;
 
   private readonly apiKey: string;
+  private readonly effort: ParallelResponsesEffort;
   private readonly fetch: Fetch;
   private readonly onError: ((error: Error) => void) | undefined;
-  private readonly capacity = new Capacity();
+  private readonly capacity: Capacity;
 
   constructor(options: ParallelResponsesProviderOptions) {
+    const effort = options.effort === undefined ? 'medium' : options.effort;
+    if (!PARALLEL_RESPONSES_EFFORTS.some((candidate) => candidate === effort)) {
+      throw new Error(
+        'dsh-responses-subagent: effort must be low, medium, or high'
+      );
+    }
+    const maxConcurrentRuns =
+      options.maxConcurrentRuns ?? DEFAULT_MAX_ACTIVE_RUNS;
+    if (
+      !Number.isSafeInteger(maxConcurrentRuns) ||
+      maxConcurrentRuns < 1 ||
+      maxConcurrentRuns > MAX_ACTIVE_RUN_LIMIT
+    ) {
+      throw new Error(
+        `dsh-responses-subagent: maxConcurrentRuns must be an integer from 1 to ${MAX_ACTIVE_RUN_LIMIT}`
+      );
+    }
     this.apiKey = options.apiKey;
+    this.effort = effort;
     this.fetch = options.fetch ?? globalThis.fetch;
     this.onError = options.onError;
+    this.capacity = new Capacity(maxConcurrentRuns);
   }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
@@ -295,7 +341,8 @@ export class ParallelResponsesProvider implements SubagentProvider {
           body: JSON.stringify({
             model: 'parallel',
             input: prompt,
-            reasoning: { effort: 'medium' },
+            instructions: PARALLEL_RESEARCH_INSTRUCTIONS,
+            reasoning: { effort: this.effort },
             stream: false,
           }),
           redirect: 'error',
