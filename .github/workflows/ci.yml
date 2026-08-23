@@ -85,13 +85,12 @@ jobs:
         run: pnpm build
 
   dsh-compatibility:
-    name: DSH Compatibility (${{ matrix.package }}, Node ${{ matrix.node }})
+    name: DSH Compatibility (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         node: [22.19.0, 24, 26]
-        package: [dsh-web-search, dsh-responses-subagent]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -106,10 +105,10 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --filter "@parallel-web/${{ matrix.package }}..." --frozen-lockfile
+        run: pnpm install --filter @parallel-web/dsh-web-search... --filter @parallel-web/dsh-responses-subagent... --frozen-lockfile
 
       - name: Run deterministic plugin checks
-        run: pnpm --filter "@parallel-web/${{ matrix.package }}" check
+        run: pnpm --filter @parallel-web/dsh-web-search --filter @parallel-web/dsh-responses-subagent run check
 
       - name: Verify packed DSH profile lifecycle
         shell: bash
@@ -119,26 +118,67 @@ jobs:
           dsh_home="$(mktemp -d)"
           trap 'rm -rf "$pack_dir" "$dsh_home"' EXIT
 
-          pnpm --dir "packages/${{ matrix.package }}" pack --pack-destination "$pack_dir"
+          pnpm --dir packages/dsh-web-search pack --pack-destination "$pack_dir"
           artifact="$(find "$pack_dir" -name '*.tgz' -print -quit)"
-          version="$(node -p "require('./packages/${{ matrix.package }}/package.json').version")"
+          version="$(node -p "require('./packages/dsh-web-search/package.json').version")"
 
-          node "packages/${{ matrix.package }}/scripts/verify-packed-artifact.mjs" \
+          node packages/dsh-web-search/scripts/verify-packed-artifact.mjs \
             --tarball "$artifact"
-          DSH_HOME="$dsh_home" pnpm --dir "packages/${{ matrix.package }}" exec dsh \
+          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
             --profile web --dump-config > "$dsh_home/before.yml"
-          DSH_HOME="$dsh_home" pnpm --dir "packages/${{ matrix.package }}" exec dsh \
+          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
             plugin --profile web add "$artifact"
-          DSH_HOME="$dsh_home" pnpm --dir "packages/${{ matrix.package }}" exec dsh \
+          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
             --profile web --dump-config > "$dsh_home/after.yml"
-          node "packages/${{ matrix.package }}/scripts/verify-packed-profile.mjs" \
+          node packages/dsh-web-search/scripts/verify-packed-profile.mjs \
             --dsh-home "$dsh_home" \
             --expected-version "$version"
-          DSH_HOME="$dsh_home" pnpm --dir "packages/${{ matrix.package }}" exec dsh \
-            plugin --profile web remove "@parallel-web/${{ matrix.package }}"
-          DSH_HOME="$dsh_home" pnpm --dir "packages/${{ matrix.package }}" exec dsh \
+
+          pnpm --dir packages/dsh-responses-subagent pack --pack-destination "$pack_dir"
+          responses_artifact="$(find "$pack_dir" -name '*dsh-responses-subagent*.tgz' -print -quit)"
+          tar -xOzf "$responses_artifact" package/package.json | node -e '
+            const manifest = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+            if (manifest.private || manifest.publishConfig?.access !== "public" ||
+                manifest.dsh?.bundle?.patch !== "./cordis.patch.yml") {
+              throw new Error("invalid packed Responses plugin manifest");
+            }
+          '
+          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
+            plugin --profile web add "$responses_artifact"
+          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
+            --profile web --dump-config > "$dsh_home/combined.yml"
+          grep -Fq 'id: subagent-parallel-responses' "$dsh_home/combined.yml"
+          grep -Fq 'toolName: parallel_research' "$dsh_home/combined.yml"
+          grep -Fq 'id: web-search-parallel' "$dsh_home/combined.yml"
+
+          node --input-type=module -e '
+            import assert from "node:assert/strict";
+            import { createRequire } from "node:module";
+            import { join } from "node:path";
+
+            const require = createRequire(join(process.argv[1], "profiles/web/package.json"));
+            const plugin = await import(require.resolve("@parallel-web/dsh-responses-subagent"));
+            const { Context } = await import(require.resolve("@deepseek-ai/cordis"));
+            const subagents = await import(require.resolve("@deepseek-ai/dsh-subagent"));
+            const context = new Context();
+            context.provide("systemPrompt", { section() {} });
+            await context.plugin(subagents.default);
+            await context.plugin(plugin, { apiKey: "parallel_test_packed_profile" });
+            assert.equal(plugin.Config.dict.apiKey.meta.role, "secret");
+            assert.equal(context.subagents.getProvider("parallel-responses")?.inheritsParentContext, false);
+          ' "$dsh_home"
+
+          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
+            plugin --profile web remove @parallel-web/dsh-responses-subagent
+          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
+            --profile web --dump-config > "$dsh_home/responses-removed.yml"
+          cmp "$dsh_home/after.yml" "$dsh_home/responses-removed.yml"
+
+          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
+            plugin --profile web remove @parallel-web/dsh-web-search
+          DSH_HOME="$dsh_home" pnpm --dir packages/dsh-web-search exec dsh \
             --profile web --dump-config > "$dsh_home/removed.yml"
-          node "packages/${{ matrix.package }}/scripts/verify-profile-overlay.mjs" \
+          node packages/dsh-web-search/scripts/verify-profile-overlay.mjs \
             --before "$dsh_home/before.yml" \
             --after "$dsh_home/after.yml" \
             --removed "$dsh_home/removed.yml"

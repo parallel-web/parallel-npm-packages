@@ -8,5 +8,4 @@
         provider: parallel-responses
         toolName: parallel_research
         enableRunInBackground: false
-        backgroundMode: one-shot
         maxDepth: provider-managed

@@ -5,8 +5,6 @@ import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment';
 import z from '@deepseek-ai/schemastery';
 import type {} from '@deepseek-ai/dsh-subagent';
 import {
-  DEFAULT_MAX_ACTIVE_RUNS,
-  MAX_ACTIVE_RUN_LIMIT,
   PARALLEL_RESPONSES_EFFORTS,
   ParallelResponsesProvider,
   type ParallelResponsesEffort,
@@ -19,12 +17,10 @@ export const name = 'subagent-parallel-responses';
 export const inject = ['subagents', 'systemPrompt'];
 
 const RESEARCH_TOOL_GUIDANCE =
-  'Use parallel_research for current web research and primary-source ' +
-  'verification. It delegates to an autonomous web-research specialist and ' +
-  'returns a synthesized, citation-backed answer, not raw search results. ' +
-  'Pass a complete, self-contained natural-language research question that ' +
-  'preserves every requested entity, date, unit, and constraint. Do not ' +
-  'invent JSON schemas, machine-output requirements, or keyword fragments. ';
+  'parallel_research delegates to an autonomous web-research specialist and ' +
+  'returns a synthesized, citation-backed answer. Pass a complete, ' +
+  'self-contained research question with all requested constraints. Do not ' +
+  'invent JSON schemas or machine-output requirements. ';
 
 function researchToolGuidance(effort: ParallelResponsesEffort): string {
   const strategy =
@@ -43,19 +39,11 @@ export interface Config {
   apiKey?: string;
   /** Research tier; higher effort trades cost for deeper investigation. */
   effort?: ParallelResponsesEffort;
-  /** Maximum simultaneous research calls, including parallel fan-out. */
-  maxConcurrentRuns?: number;
 }
 
 export const Config: z<Config> = z.object({
   apiKey: z.string().role('secret'),
   effort: z.union(PARALLEL_RESPONSES_EFFORTS),
-  maxConcurrentRuns: z
-    .number()
-    .step(1)
-    .min(1)
-    .max(MAX_ACTIVE_RUN_LIMIT)
-    .default(DEFAULT_MAX_ACTIVE_RUNS),
 });
 
 /**
@@ -77,9 +65,6 @@ export function apply(ctx: Context, config: Config): void {
     new ParallelResponsesProvider({
       apiKey,
       ...(config.effort === undefined ? {} : { effort: config.effort }),
-      ...(config.maxConcurrentRuns === undefined
-        ? {}
-        : { maxConcurrentRuns: config.maxConcurrentRuns }),
       onError: (error) => {
         ctx.logger.warn(
           `subagent-parallel-responses: remote run failed: ${error.message}`

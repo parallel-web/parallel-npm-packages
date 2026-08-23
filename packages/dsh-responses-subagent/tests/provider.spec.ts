@@ -11,7 +11,6 @@ import {
   PARALLEL_RESPONSES_URL,
   PARALLEL_RESEARCH_INSTRUCTIONS,
   ParallelResponsesProvider,
-  type ParallelResponsesEffort,
   researchPrompt,
 } from '../src/provider.ts';
 
@@ -63,7 +62,7 @@ afterEach(() => {
 });
 
 describe('Parallel Responses request and output', () => {
-  it('sends one fixed request and renders deduplicated title and URL citations', async () => {
+  it('sends one fixed request and tolerates imperfect, duplicate citations', async () => {
     const response = completed('Evidence-backed answer.', [
       {
         type: 'url_citation',
@@ -76,6 +75,18 @@ describe('Parallel Responses request and output', () => {
         url: 'https://a.test/report',
       },
       { type: 'url_citation', url: 'https://b.test/data' },
+      { type: 'url_citation', url: '' },
+      { type: 'url_citation', url: 42 },
+      {
+        type: 'url_citation',
+        title: 42,
+        url: 'https://c.test/report',
+      },
+      {
+        type: 'url_citation',
+        title: 'Recovered title',
+        url: 'https://c.test/report',
+      },
     ]);
     const fetch = vi.fn().mockResolvedValue(response);
     const provider = new ParallelResponsesProvider({
@@ -93,7 +104,8 @@ describe('Parallel Responses request and output', () => {
           text:
             'Evidence-backed answer.\n\nSources:\n' +
             '- Source A — https://a.test/report\n' +
-            '- https://b.test/data',
+            '- https://b.test/data\n' +
+            '- Recovered title — https://c.test/report',
         },
       ],
       stopReason: 'completed',
@@ -137,19 +149,6 @@ describe('Parallel Responses request and output', () => {
         reasoning: { effort },
       });
       await run.dispose();
-    }
-  );
-
-  it.each(['unsupported', '', 1, null])(
-    'rejects invalid direct-provider effort %s',
-    (effort) => {
-      expect(
-        () =>
-          new ParallelResponsesProvider({
-            apiKey: 'parallel_test_provider',
-            effort: effort as unknown as ParallelResponsesEffort,
-          })
-      ).toThrow('effort must be low, medium, or high');
     }
   );
 
@@ -259,7 +258,7 @@ describe('Parallel Responses request and output', () => {
   });
 });
 
-describe('Parallel Responses capacity and lifecycle', () => {
+describe('Parallel Responses lifecycle', () => {
   it('rejects cancellation before publication without making a request', async () => {
     const fetch = vi.fn();
     const provider = new ParallelResponsesProvider({
@@ -292,57 +291,21 @@ describe('Parallel Responses capacity and lifecycle', () => {
     await disposal;
   });
 
-  it('admits only two active requests and removes an aborted queued start', async () => {
+  it('does not throttle simultaneous research calls', async () => {
     const fetch = abortableFetch();
     const provider = new ParallelResponsesProvider({
       apiKey: 'parallel_test_provider',
-      fetch,
-    });
-    const first = await provider.start(request());
-    const second = await provider.start(request());
-    const queuedController = new AbortController();
-    const queued = provider.start(request(undefined, queuedController.signal));
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-
-    queuedController.abort();
-    await expect(queued).rejects.toThrow('waiting for capacity');
-    expect(fetch).toHaveBeenCalledTimes(2);
-
-    await first.dispose();
-    const replacement = await provider.start(request());
-    expect(fetch).toHaveBeenCalledTimes(3);
-    await Promise.all([second.dispose(), replacement.dispose()]);
-  });
-
-  it('admits the configured number of simultaneous research calls', async () => {
-    const fetch = abortableFetch();
-    const provider = new ParallelResponsesProvider({
-      apiKey: 'parallel_test_provider',
-      maxConcurrentRuns: 4,
       fetch,
     });
     const runs = await Promise.all(
-      Array.from({ length: 4 }, async () => await provider.start(request()))
+      Array.from({ length: 20 }, async () => await provider.start(request()))
     );
 
-    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch).toHaveBeenCalledTimes(20);
     await Promise.all(runs.map(async (run) => await run.dispose()));
   });
 
-  it.each([0, 1.5, 21, Number.NaN])(
-    'rejects an invalid concurrency limit %s',
-    (maxConcurrentRuns) => {
-      expect(
-        () =>
-          new ParallelResponsesProvider({
-            apiKey: 'parallel_test_provider',
-            maxConcurrentRuns,
-          })
-      ).toThrow('maxConcurrentRuns must be an integer from 1 to 20');
-    }
-  );
-
-  it('times out once with no retry and releases capacity', async () => {
+  it('times out once with no retry', async () => {
     vi.useFakeTimers();
     const fetch = abortableFetch();
     const onError = vi.fn();
@@ -438,7 +401,6 @@ describe('Parallel Responses plugin registration', () => {
     const fiber = await ctx.plugin(plugin, {
       apiKey: 'parallel_test_explicit',
       effort: 'low',
-      maxConcurrentRuns: 8,
     });
 
     const registration = section.mock.calls[0]?.[0] as {

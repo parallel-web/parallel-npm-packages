@@ -16,7 +16,6 @@ export default defineConfig({
       '@deepseek-ai/dsh-launch-environment',
       '@deepseek-ai/dsh-session',
       '@deepseek-ai/dsh-subagent',
-      '@deepseek-ai/dsh-tool-subagent',
       '@deepseek-ai/schemastery',
     ],
   },

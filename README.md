@@ -5,7 +5,7 @@ Monorepo for @parallel-web npm packages.
 ## Packages
 
 - [`@parallel-web/ai-sdk-tools`](./packages/ai-sdk-tools) - AI SDK tools for Parallel Web
-- [`@parallel-web/dsh-responses-subagent`](./packages/dsh-responses-subagent) - Parallel Responses research subagent for DeepSeek Harness; not yet published, install from a local tarball
+- [`@parallel-web/dsh-responses-subagent`](./packages/dsh-responses-subagent) - Parallel Responses research subagent for DeepSeek Harness
 - [`@parallel-web/dsh-web-search`](./packages/dsh-web-search) - Parallel Search provider for DeepSeek Harness
 - [`@parallel-web/opencode-plugin`](./packages/opencode-plugin) - Opencode plugin for Parallel Web
 - [`@parallel-web/pi-extension`](./packages/pi-extension) - pi agent extension for Parallel Web

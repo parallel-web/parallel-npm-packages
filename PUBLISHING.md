@@ -58,18 +58,16 @@ Skipping that upgrade causes a misleading `404 Not Found` on the publish `PUT`.
 
 npm requires a package to exist before its trusted publisher can be configured. Adding a package
 to this repository intentionally does not publish it. An npm organization owner must first publish
-the reviewed bootstrap release manually from a clean, updated `main` checkout. Set `PACKAGE`
-to the directory name of the new package:
+the reviewed bootstrap release manually from a clean, updated `main` checkout:
 
 ```bash
-PACKAGE=dsh-responses-subagent
 pnpm install --frozen-lockfile
-pnpm --filter "@parallel-web/$PACKAGE" check
+pnpm --filter @parallel-web/dsh-responses-subagent check
 BOOTSTRAP_DIR="$(mktemp -d)"
-pnpm --dir "packages/$PACKAGE" pack --pack-destination "$BOOTSTRAP_DIR"
+pnpm --dir packages/dsh-responses-subagent pack --pack-destination "$BOOTSTRAP_DIR"
 BOOTSTRAP_TARBALL="$(find "$BOOTSTRAP_DIR" -name '*.tgz' -print -quit)"
 npm publish "$BOOTSTRAP_TARBALL" --access public --tag rc
-npm view "@parallel-web/$PACKAGE" dist-tags --json
+npm view @parallel-web/dsh-responses-subagent dist-tags --json
 ```
 
 The npm owner should inspect the tarball listing before the publish and complete npm's 2FA prompt.
