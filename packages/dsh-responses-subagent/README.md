@@ -16,7 +16,7 @@ This package has not been published to npm. Install from the repository root:
 ```sh
 pnpm --filter @parallel-web/dsh-responses-subagent build
 pnpm --dir packages/dsh-responses-subagent pack --pack-destination /tmp
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 \
+npx --yes @deepseek-ai/dsh@0.1.1-rc.2 \
   plugin --profile web add \
   /tmp/parallel-web-dsh-responses-subagent-0.1.0-rc.0.tgz
 ```
@@ -26,7 +26,7 @@ that starts Harness, then configure a parent model in **Settings > Models**:
 
 ```sh
 export PARALLEL_API_KEY="your-key"
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 web
+npx --yes @deepseek-ai/dsh@0.1.1-rc.2 web
 ```
 
 After the first npm release, replace the tarball path in the install command
@@ -58,6 +58,6 @@ Keep `PARALLEL_API_KEY` in the launch environment, not in this profile.
 ## Remove
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 \
+npx --yes @deepseek-ai/dsh@0.1.1-rc.2 \
   plugin --profile web remove @parallel-web/dsh-responses-subagent
 ```
