@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { get } from 'node:http';
+import { connect, type Socket } from 'node:net';
 import { loginWithParallel } from '../index.js';
 
 const PLATFORM_ORIGIN = 'https://example.test';
@@ -161,5 +162,50 @@ describe('loginWithParallel', () => {
     ).rejects.toThrow(/login failed: nope/i);
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('handles a follow-up request while the callback listener is closing', async () => {
+    let socket: Socket | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        setImmediate(() => {
+          socket?.write(
+            '0\r\n\r\n' +
+              'GET /favicon.ico HTTP/1.1\r\n' +
+              'Host: 127.0.0.1\r\n' +
+              'Connection: close\r\n\r\n'
+          );
+        });
+        return new Response(JSON.stringify({ access_token: 'sk-test-key' }), {
+          status: 200,
+        });
+      })
+    );
+
+    const result = await loginWithParallel({
+      platformOrigin: PLATFORM_ORIGIN,
+      openBrowser: false,
+      onAuthUrl: (rawUrl) => {
+        const authUrl = new URL(rawUrl);
+        const redirectUri = new URL(
+          authUrl.searchParams.get('redirect_uri') ?? ''
+        );
+        const state = authUrl.searchParams.get('state') ?? '';
+        socket = connect(Number(redirectUri.port), redirectUri.hostname, () => {
+          socket?.write(
+            `POST ${redirectUri.pathname}?code=abc&state=${encodeURIComponent(state)} HTTP/1.1\r\n` +
+              `Host: ${redirectUri.host}\r\n` +
+              'Transfer-Encoding: chunked\r\n' +
+              'Connection: keep-alive\r\n\r\n' +
+              '1\r\nx\r\n'
+          );
+        });
+        socket.resume();
+        socket.setTimeout(1_000, () => socket?.destroy());
+      },
+    });
+
+    expect(result.apiKey).toBe('sk-test-key');
   });
 });
