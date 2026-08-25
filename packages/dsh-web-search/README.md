@@ -11,7 +11,8 @@ You will need:
 - Node.js 22.19 or later in the 22.x series, or Node.js 24 or newer;
 - pnpm 10 or newer;
 - a [DeepSeek API key](https://platform.deepseek.com/); and
-- a [Parallel API key](https://platform.parallel.ai/).
+- optionally, a [Parallel API key](https://platform.parallel.ai/) for
+  authenticated Search API access.
 
 Check your installed versions:
 
@@ -55,8 +56,10 @@ is stable, you can leave the suffix off.
 
 ### 3. Start DeepSeek Harness
 
-Make your Parallel API key available in the terminal where you will run
-Harness:
+The plugin works without a Parallel API key through the free Search MCP
+endpoint at `https://search.parallel.ai/mcp`. To use authenticated Search API
+access instead, make your Parallel API key available in the terminal where you
+will run Harness:
 
 ```sh
 export PARALLEL_API_KEY="your-key"
@@ -108,13 +111,15 @@ logging:
 PARALLEL_LOG=info npx --yes @deepseek-ai/dsh@0.1.0-rc.6 web
 ```
 
-After a `web_search` call, the terminal should show a successful request to
-`https://api.parallel.ai/v1/search`. Review logs before sharing them.
+With a Parallel API key, a `web_search` call should show a successful request to
+`https://api.parallel.ai/v1/search`. Without a key, search requests use
+`https://search.parallel.ai/mcp` instead. Review logs before sharing them.
 
 ## Optional settings
 
-The defaults work without extra configuration. If you want to tune the search,
-edit `~/.dsh/profiles/web/cordis.patch.yml`:
+The defaults work without extra configuration. If you use authenticated Search
+API access and want to tune the search, edit
+`~/.dsh/profiles/web/cordis.patch.yml`:
 
 ```yaml
 - id: web-search-parallel
@@ -133,7 +138,8 @@ edit `~/.dsh/profiles/web/cordis.patch.yml`:
 Keep `PARALLEL_API_KEY` in the environment rather than putting it in this file,
 which is stored as readable text.
 
-The plugin always sends requests to `https://api.parallel.ai` and ignores
+Authenticated requests always use `https://api.parallel.ai`, and anonymous
+requests always use `https://search.parallel.ai/mcp`. The plugin ignores
 `PARALLEL_BASE_URL`.
 
 ## If something goes wrong
@@ -141,8 +147,9 @@ The plugin always sends requests to `https://api.parallel.ai` and ignores
 - **`pnpm` is not found:** run `npm install --global pnpm@10`.
 - **Port 3080 is already in use:** stop the older Harness process, then start
   Harness again.
-- **Parallel Search is unavailable:** confirm `PARALLEL_API_KEY` is set in the
-  same terminal that starts Harness.
+- **Authenticated Parallel Search is unavailable:** confirm `PARALLEL_API_KEY`
+  is set in the same terminal that starts Harness. Remove the variable to use
+  free anonymous search instead.
 
 ## Remove
 

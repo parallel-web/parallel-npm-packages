@@ -1,6 +1,6 @@
 import { APIConnectionTimeoutError, APIUserAbortError } from 'parallel-web';
 import { errorChain } from '@deepseek-ai/dsh-llm';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_MAX_CHARS_TOTAL,
   ParallelSearchProvider,
@@ -14,6 +14,10 @@ const baseOptions: ParallelSearchProviderOptions = {
   apiKey: 'parallel_test_provider',
   maxCharsTotal: DEFAULT_MAX_CHARS_TOTAL,
 };
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function providerWithSearch(
   search: SearchClient['search'],
@@ -137,12 +141,141 @@ describe('Parallel response mapping', () => {
   });
 });
 
+describe('anonymous Parallel MCP search', () => {
+  it('searches without credentials and reuses one anonymous session', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            result: {
+              structuredContent: {
+                results: [
+                  {
+                    url: 'https://example.test',
+                    title: 'Example',
+                    excerpts: ['Useful excerpt'],
+                  },
+                ],
+              },
+            },
+          }),
+          { headers: { 'content-type': 'application/json' } }
+        )
+    );
+    const clientFactory = vi.fn();
+    const provider = new ParallelSearchProvider(
+      { ...baseOptions, apiKey: '' },
+      clientFactory
+    );
+
+    await expect(provider.search({ query: 'first query' })).resolves.toEqual({
+      sources: [
+        {
+          url: 'https://example.test',
+          title: 'Example',
+          snippet: 'Useful excerpt',
+        },
+      ],
+      truncated: false,
+    });
+    await provider.search({ query: 'second query' });
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [url, options] = fetch.mock.calls[0]!;
+    expect(url).toBe('https://search.parallel.ai/mcp');
+    expect(options).toMatchObject({
+      method: 'POST',
+      redirect: 'error',
+      headers: {
+        Accept: 'application/json, text/event-stream',
+        'Content-Type': 'application/json',
+      },
+    });
+    expect(options?.headers).not.toHaveProperty('Authorization');
+    expect(options?.headers).not.toHaveProperty('x-api-key');
+
+    const firstBody = JSON.parse(options?.body as string);
+    const secondBody = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string);
+    expect(firstBody).toMatchObject({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'web_search',
+        arguments: {
+          objective: 'first query',
+          search_queries: ['first query'],
+          session_id: expect.any(String),
+        },
+      },
+    });
+    expect(secondBody.params.arguments.session_id).toBe(
+      firstBody.params.arguments.session_id
+    );
+    expect(clientFactory).not.toHaveBeenCalled();
+  });
+
+  it('maps anonymous HTTP failures to WEB_PROVIDER_ERROR', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('rate limited', { status: 429 })
+    );
+    const provider = new ParallelSearchProvider({
+      ...baseOptions,
+      apiKey: '',
+    });
+
+    await expect(provider.search({ query: 'q' })).rejects.toMatchObject({
+      code: 'WEB_PROVIDER_ERROR',
+      cause: { message: expect.stringContaining('429') },
+    });
+  });
+
+  it('maps anonymous JSON-RPC failures to WEB_PROVIDER_ERROR', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          error: { code: -32603, message: 'Search temporarily unavailable' },
+        })
+      )
+    );
+    const provider = new ParallelSearchProvider({
+      ...baseOptions,
+      apiKey: '',
+    });
+
+    await expect(provider.search({ query: 'q' })).rejects.toMatchObject({
+      code: 'WEB_PROVIDER_ERROR',
+      cause: { message: 'Search temporarily unavailable' },
+    });
+  });
+
+  it('maps anonymous caller aborts to WEB_ABORTED', async () => {
+    const controller = new AbortController();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      controller.abort();
+      throw new Error('transport stopped');
+    });
+    const provider = new ParallelSearchProvider({
+      ...baseOptions,
+      apiKey: '',
+    });
+
+    await expect(
+      provider.search({ query: 'q' }, controller.signal)
+    ).rejects.toMatchObject({ code: 'WEB_ABORTED' });
+  });
+});
+
 describe('Parallel provider availability and errors', () => {
-  it('is available only for a key and valid locked options', () => {
+  it('is available with or without a key when locked options are valid', () => {
     expect(new ParallelSearchProvider(baseOptions).available()).toBe(true);
     expect(
       new ParallelSearchProvider({ ...baseOptions, apiKey: '' }).available()
-    ).toBe(false);
+    ).toBe(true);
     expect(
       new ParallelSearchProvider({
         ...baseOptions,

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import Parallel, {
   APIUserAbortError,
   type Parallel as ParallelTypes,
@@ -12,6 +13,7 @@ import type {
 
 export const PARALLEL_PROVIDER_ID = 'parallel';
 export const PARALLEL_API_ORIGIN = 'https://api.parallel.ai';
+const PARALLEL_SEARCH_MCP_URL = 'https://search.parallel.ai/mcp';
 export const DEFAULT_MAX_CHARS_TOTAL = 25_000;
 export const PARALLEL_SEARCH_MODES = ['turbo', 'basic', 'advanced'] as const;
 
@@ -46,6 +48,7 @@ const createProductionClient: SearchClientFactory = (apiKey) =>
 export class ParallelSearchProvider implements WebSearchProvider {
   readonly id = PARALLEL_PROVIDER_ID;
   private client: SearchClient | undefined;
+  private anonymousSessionId: string | undefined;
 
   constructor(
     private readonly options: ParallelSearchProviderOptions,
@@ -54,7 +57,6 @@ export class ParallelSearchProvider implements WebSearchProvider {
 
   available(): boolean {
     return (
-      this.options.apiKey.length > 0 &&
       isMode(this.options.mode) &&
       isPositiveInteger(this.options.maxCharsTotal) &&
       (this.options.maxCharsPerResult === undefined ||
@@ -70,15 +72,18 @@ export class ParallelSearchProvider implements WebSearchProvider {
 
     let payload: unknown;
     try {
-      payload = await this.getClient().search(
-        buildSearchBody(request, this.options),
-        {
-          signal,
-          maxRetries: 0,
-          timeout: 60_000,
-          fetchOptions: { redirect: 'error' },
-        }
-      );
+      payload =
+        this.options.apiKey.length === 0
+          ? await this.searchAnonymously(request, signal)
+          : await this.getClient().search(
+              buildSearchBody(request, this.options),
+              {
+                signal,
+                maxRetries: 0,
+                timeout: 60_000,
+                fetchOptions: { redirect: 'error' },
+              }
+            );
     } catch (error: unknown) {
       if (signal?.aborted || error instanceof APIUserAbortError)
         throw abortedError(error, this.options.apiKey);
@@ -102,6 +107,55 @@ export class ParallelSearchProvider implements WebSearchProvider {
 
   private getClient(): SearchClient {
     return (this.client ??= this.createClient(this.options.apiKey));
+  }
+
+  private async searchAnonymously(
+    request: WebSearchRequest,
+    signal?: AbortSignal
+  ): Promise<unknown> {
+    const timeout = AbortSignal.timeout(60_000);
+    const response = await fetch(PARALLEL_SEARCH_MCP_URL, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json, text/event-stream',
+        'Content-Type': 'application/json',
+      },
+      redirect: 'error',
+      signal:
+        signal === undefined ? timeout : AbortSignal.any([signal, timeout]),
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'web_search',
+          arguments: {
+            objective: request.query,
+            search_queries: [request.query],
+            session_id: (this.anonymousSessionId ??= randomUUID()),
+          },
+        },
+      }),
+    });
+
+    if (!response.ok)
+      throw new Error(`Parallel Search MCP HTTP ${response.status}`);
+
+    const payload: unknown = await response.json();
+    if (!isRecord(payload))
+      throw new TypeError('MCP response must be an object');
+    if (isRecord(payload.error)) {
+      throw new Error(
+        typeof payload.error.message === 'string'
+          ? payload.error.message
+          : 'Parallel Search MCP returned an error'
+      );
+    }
+    if (!isRecord(payload.result) || payload.result.isError === true) {
+      throw new Error('Parallel Search MCP tool call failed');
+    }
+
+    return payload.result.structuredContent;
   }
 }
 

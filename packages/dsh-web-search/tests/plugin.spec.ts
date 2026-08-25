@@ -106,8 +106,17 @@ describe('Parallel plugin registration', () => {
     expect(search).toHaveBeenCalledOnce();
   });
 
-  it('lets an explicit empty key suppress environment fallback', async () => {
+  it('lets an explicit empty key choose anonymous search over an environment key', async () => {
     const search = mockSearch();
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          result: { structuredContent: { results: [] } },
+        })
+      )
+    );
     const ctx = new Context();
     ctx.provide(
       'launchEnvironment',
@@ -120,21 +129,48 @@ describe('Parallel plugin registration', () => {
     );
     await ctx.plugin(WebRuntime, { searchProvider: 'parallel' });
     await ctx.plugin(parallelPlugin, { apiKey: '' });
-    await expect(ctx.web.search({ query: 'q' })).rejects.toMatchObject({
-      code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE',
+    await expect(ctx.web.search({ query: 'q' })).resolves.toEqual({
+      sources: [],
+      truncated: false,
     });
+    expect(fetch).toHaveBeenCalledOnce();
     expect(search).not.toHaveBeenCalled();
   });
 
-  it('is unavailable without a key and makes no network call', async () => {
+  it('uses anonymous MCP search when no API key is configured', async () => {
     const search = mockSearch();
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          result: {
+            structuredContent: {
+              results: [
+                {
+                  url: 'https://example.test',
+                  excerpts: ['Anonymous search works'],
+                },
+              ],
+            },
+          },
+        })
+      )
+    );
     const ctx = new Context();
     ctx.provide('launchEnvironment', createLaunchEnvironmentSnapshot([]));
     await ctx.plugin(WebRuntime, { searchProvider: 'parallel' });
     await ctx.plugin(parallelPlugin, {});
-    await expect(ctx.web.search({ query: 'q' })).rejects.toMatchObject({
-      code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE',
+    await expect(ctx.web.search({ query: 'q' })).resolves.toEqual({
+      sources: [
+        {
+          url: 'https://example.test',
+          snippet: 'Anonymous search works',
+        },
+      ],
+      truncated: false,
     });
+    expect(fetch).toHaveBeenCalledOnce();
     expect(search).not.toHaveBeenCalled();
   });
 
