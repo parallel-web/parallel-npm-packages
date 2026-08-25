@@ -147,6 +147,7 @@ async function startCallbackListener() {
     async close() {
       await new Promise<void>((resolve) => {
         server.close(() => resolve());
+        server.closeAllConnections();
       });
     },
   };

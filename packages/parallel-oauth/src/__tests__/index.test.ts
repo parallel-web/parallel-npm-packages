@@ -164,6 +164,48 @@ describe('loginWithParallel', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('finishes login without waiting for the callback client to disconnect', async () => {
+    stubTokenExchange();
+    let socket: Socket | undefined;
+
+    const loginPromise = loginWithParallel({
+      platformOrigin: PLATFORM_ORIGIN,
+      openBrowser: false,
+      onAuthUrl: (rawUrl) => {
+        const authUrl = new URL(rawUrl);
+        const redirectUri = new URL(
+          authUrl.searchParams.get('redirect_uri') ?? ''
+        );
+        const state = authUrl.searchParams.get('state') ?? '';
+        socket = connect(Number(redirectUri.port), redirectUri.hostname, () => {
+          socket?.write(
+            `POST ${redirectUri.pathname}?code=abc&state=${encodeURIComponent(state)} HTTP/1.1\r\n` +
+              `Host: ${redirectUri.host}\r\n` +
+              'Transfer-Encoding: chunked\r\n' +
+              'Connection: keep-alive\r\n\r\n' +
+              '1\r\nx\r\n'
+          );
+        });
+        socket.on('error', () => {});
+        socket.resume();
+      },
+    });
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const outcome = await Promise.race([
+      loginPromise.then((result) => ({ result })),
+      new Promise<{ timedOut: true }>((resolve) => {
+        timer = setTimeout(() => resolve({ timedOut: true }), 1_000);
+      }),
+    ]);
+
+    clearTimeout(timer);
+    socket?.destroy();
+    await loginPromise;
+
+    expect(outcome).toEqual({ result: { apiKey: 'sk-test-key' } });
+  });
+
   it('handles a follow-up request while the callback listener is closing', async () => {
     let socket: Socket | undefined;
     vi.stubGlobal(
@@ -201,6 +243,7 @@ describe('loginWithParallel', () => {
               '1\r\nx\r\n'
           );
         });
+        socket.on('error', () => {});
         socket.resume();
         socket.setTimeout(1_000, () => socket?.destroy());
       },
