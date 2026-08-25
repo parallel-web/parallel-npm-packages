@@ -142,7 +142,7 @@ pnpm --filter @parallel-web/pi-extension typecheck
 ## Notes
 
 - The extension uses the `parallel-web` TypeScript SDK directly.
-- Search requests use Parallel SDK `basic` mode.
+- Search requests use Parallel SDK `fast` mode.
 - Search requests include `client_model` when Pi has an active model selected.
 - Search and extract requests reuse a generated `session_id` for the life of the current Pi session.
 - The login flow tries to open your browser automatically.
