@@ -48,7 +48,7 @@ const createProductionClient: SearchClientFactory = (apiKey) =>
 export class ParallelSearchProvider implements WebSearchProvider {
   readonly id = PARALLEL_PROVIDER_ID;
   private client: SearchClient | undefined;
-  private anonymousSessionId: string | undefined;
+  private readonly sessionId = randomUUID();
 
   constructor(
     private readonly options: ParallelSearchProviderOptions,
@@ -76,7 +76,10 @@ export class ParallelSearchProvider implements WebSearchProvider {
         this.options.apiKey.length === 0
           ? await this.searchAnonymously(request, signal)
           : await this.getClient().search(
-              buildSearchBody(request, this.options),
+              {
+                ...buildSearchBody(request, this.options),
+                session_id: this.sessionId,
+              },
               {
                 signal,
                 maxRetries: 0,
@@ -135,7 +138,7 @@ export class ParallelSearchProvider implements WebSearchProvider {
           arguments: {
             objective: request.query,
             search_queries: [request.query],
-            session_id: (this.anonymousSessionId ??= randomUUID()),
+            session_id: this.sessionId,
           },
         },
       }),

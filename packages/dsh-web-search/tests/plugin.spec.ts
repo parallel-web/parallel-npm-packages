@@ -71,6 +71,48 @@ describe('Parallel plugin config', () => {
 });
 
 describe('Parallel plugin registration', () => {
+  it.each(['', 'parallel_test_plugin'])(
+    'reuses a session per provider with API key %j',
+    async (apiKey) => {
+      const sessionIds: string[] = [];
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+        const body = JSON.parse(init?.body as string);
+        const sessionId =
+          apiKey === '' ? body.params.arguments.session_id : body.session_id;
+        sessionIds.push(sessionId);
+        const result = { results: [], session_id: sessionId };
+        return new Response(
+          JSON.stringify(
+            apiKey === ''
+              ? { jsonrpc: '2.0', id: 1, result: { structuredContent: result } }
+              : result
+          ),
+          { headers: { 'content-type': 'application/json' } }
+        );
+      });
+      const ctx = new Context();
+      await ctx.plugin(WebRuntime, { searchProvider: 'parallel' });
+      const fiber = await ctx.plugin(parallelPlugin, { apiKey });
+      try {
+        await ctx.web.search({ query: 'first query' });
+        await ctx.web.search({ query: 'second query' });
+        expect(sessionIds[0]).toMatch(/^[0-9a-f-]{36}$/);
+        expect(sessionIds[1]).toBe(sessionIds[0]);
+      } finally {
+        await fiber.dispose();
+      }
+
+      const next = await ctx.plugin(parallelPlugin, { apiKey });
+      try {
+        await ctx.web.search({ query: 'new provider' });
+        expect(sessionIds[2]).toMatch(/^[0-9a-f-]{36}$/);
+        expect(sessionIds[2]).not.toBe(sessionIds[0]);
+      } finally {
+        await next.dispose();
+      }
+    }
+  );
+
   it('registers, selects, and disposes through the real WebRuntime', async () => {
     mockSearch();
     const ctx = new Context();
