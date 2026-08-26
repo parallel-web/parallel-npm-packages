@@ -117,9 +117,9 @@ With a Parallel API key, a `web_search` call should show a successful request to
 
 ## Optional settings
 
-The defaults work without extra configuration. If you use authenticated Search
-API access and want to tune the search, edit
-`~/.dsh/profiles/web/cordis.patch.yml`:
+The defaults work without extra configuration. To tune excerpt limits, edit
+`~/.dsh/profiles/web/cordis.patch.yml`. The `mode` setting applies only to
+authenticated Search API access:
 
 ```yaml
 - id: web-search-parallel
@@ -134,6 +134,9 @@ API access and want to tune the search, edit
 | `mode` | Parallel's `advanced` default | `turbo`, `basic`, or `advanced` search |
 | `maxCharsTotal` | `25000` | Total excerpt characters returned to Harness |
 | `maxCharsPerResult` | no limit | Excerpt characters kept for each result |
+
+Anonymous search applies excerpt limits locally, including the separators
+between excerpts. Authenticated search sends these limits to the Search API.
 
 Keep `PARALLEL_API_KEY` in the environment rather than putting it in this file,
 which is stored as readable text.

@@ -142,6 +142,51 @@ describe('Parallel response mapping', () => {
 });
 
 describe('anonymous Parallel MCP search', () => {
+  it.each([
+    { maxCharsTotal: 4, snippets: ['abcd', undefined] },
+    { maxCharsTotal: 9, maxCharsPerResult: 6, snippets: ['abcd\n\n', 'ijk'] },
+    { maxCharsTotal: 12, snippets: ['abcd\n\nefgh', 'ij'] },
+    { maxCharsTotal: 30, snippets: ['abcd\n\nefgh', 'ijklmnop'] },
+  ])(
+    'bounds normalized excerpts with $maxCharsTotal total characters',
+    async ({ snippets, ...limits }) => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            result: {
+              structuredContent: {
+                results: [
+                  { url: 'https://empty.test', excerpts: [] },
+                  {
+                    url: 'https://a.test',
+                    title: 'A',
+                    excerpts: ['abcd', 'efgh'],
+                  },
+                  { url: 'https://b.test', excerpts: ['ijklmnop'] },
+                ],
+              },
+            },
+          })
+        )
+      );
+      const provider = new ParallelSearchProvider({ apiKey: '', ...limits });
+
+      await expect(provider.search({ query: 'q' })).resolves.toEqual({
+        sources: [
+          { url: 'https://empty.test' },
+          { url: 'https://a.test', title: 'A', snippet: snippets[0] },
+          {
+            url: 'https://b.test',
+            ...(snippets[1] === undefined ? {} : { snippet: snippets[1] }),
+          },
+        ],
+        truncated: false,
+      });
+    }
+  );
+
   it('searches without credentials and reuses one anonymous session', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(
       async () =>

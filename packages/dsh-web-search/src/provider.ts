@@ -95,7 +95,10 @@ export class ParallelSearchProvider implements WebSearchProvider {
     }
 
     try {
-      return mapParallelResponse(payload);
+      return mapParallelResponse(
+        payload,
+        this.options.apiKey.length === 0 ? this.options : undefined
+      );
     } catch (error: unknown) {
       throw providerError(
         'Parallel returned an invalid search response',
@@ -193,13 +196,31 @@ export function buildSearchBody(
   };
 }
 
-export function mapParallelResponse(payload: unknown): WebSearchResult {
+export function mapParallelResponse(
+  payload: unknown,
+  excerptLimits?: Pick<
+    ParallelSearchProviderOptions,
+    'maxCharsTotal' | 'maxCharsPerResult'
+  >
+): WebSearchResult {
   if (!isRecord(payload) || !Array.isArray(payload.results)) {
     throw new TypeError('response.results must be an array');
   }
 
+  // MCP has no excerpt controls. Bound the normalized snippets locally,
+  // including separators, while leaving source-count truncation to Harness.
+  let remaining = excerptLimits?.maxCharsTotal ?? Infinity;
   return {
-    sources: payload.results.map(mapParallelResult),
+    sources: payload.results.map((value) => {
+      const { snippet, ...source } = mapParallelResult(value);
+      if (snippet === undefined) return source;
+      const bounded = snippet.slice(
+        0,
+        Math.min(remaining, excerptLimits?.maxCharsPerResult ?? Infinity)
+      );
+      remaining -= bounded.length;
+      return bounded.length === 0 ? source : { ...source, snippet: bounded };
+    }),
     truncated: false,
   };
 }
