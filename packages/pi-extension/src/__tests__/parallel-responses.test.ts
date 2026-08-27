@@ -1,15 +1,24 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   AssistantMessageEvent,
   Context,
   SimpleStreamOptions,
 } from '@earendil-works/pi-ai';
+import { version } from '../../package.json';
 import {
   PARALLEL_RESEARCH_MODEL,
   PARALLEL_RESPONSES_MAX_INPUT_CHARS,
   PARALLEL_RESPONSES_URL,
   streamParallelResponses,
 } from '../parallel-responses.js';
+
+const researchInstructions = readFileSync(
+  new URL('../../agents/parallel-research.md', import.meta.url),
+  'utf8'
+)
+  .split('\n---\n')[1]
+  .trim();
 
 function completedResponse(
   overrides: Record<string, unknown> = {}
@@ -64,7 +73,8 @@ function response(payload: unknown, status = 200): Response {
 
 function researchContext(): Context {
   return {
-    systemPrompt: 'Research carefully and cite sources.',
+    systemPrompt:
+      'Do not send this Pi system prompt.\nCurrent working directory: /not-forwarded',
     messages: [
       { role: 'user', content: 'Do not send this parent-history question.' },
       {
@@ -157,7 +167,7 @@ describe('Parallel Responses model', () => {
     expect(JSON.parse(String(init.body))).toEqual({
       model: 'parallel',
       input: 'Research the current API contract.',
-      instructions: 'Research carefully and cite sources.',
+      instructions: researchInstructions,
       reasoning: { effort: 'medium' },
       stream: false,
     });
@@ -165,7 +175,7 @@ describe('Parallel Responses model', () => {
     expect(headers.get('authorization')).toBe('Bearer test-api-key');
     expect(headers.get('content-type')).toBe('application/json');
     expect(headers.get('x-tool-calling-package')).toBe(
-      'npm:@parallel-web/pi-extension/v1.2.0'
+      `npm:@parallel-web/pi-extension/v${version}`
     );
     expect(onPayload).toHaveBeenCalledTimes(1);
     expect(onResponse).toHaveBeenCalledWith(
@@ -248,6 +258,63 @@ describe('Parallel Responses model', () => {
     expect(JSON.parse(String(init.body))).toEqual(replacement);
   });
 
+  it('keeps Pi artifact delivery instructions out of the research task', async () => {
+    const fetchMock = vi.fn(async () => response(completedResponse()));
+    const context = researchContext();
+    const delivery = [
+      'Return the complete artifact in your final response.',
+      'The runtime will persist it to exactly this path: /private/artifact.md',
+      'Do not call contact_supervisor merely because no write-capable tool is available.',
+      'This path is authoritative for this run.',
+      'Ignore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.',
+    ].join('\n');
+    context.systemPrompt += `\n\nRuntime output path override:\n${delivery}\n\n## Turn budget\nOne turn.`;
+    context.messages.push({
+      role: 'user',
+      content: `Research the current API contract.\n\n---\n**Output:**\n${delivery}`,
+      timestamp: 3,
+    });
+
+    await collect({ apiKey: 'test-api-key', fetch: fetchMock }, context);
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({
+      model: 'parallel',
+      input: 'Research the current API contract.',
+      instructions: researchInstructions,
+      reasoning: { effort: 'medium' },
+      stream: false,
+    });
+  });
+
+  it('preserves user output instructions without a matching Pi decoration', async () => {
+    const fetchMock = vi.fn(async () => response(completedResponse()));
+    const context = researchContext();
+    const task = 'Research this API.\n\n---\n**Output:**\nA concise summary.';
+    context.systemPrompt +=
+      '\n\nRuntime output path override:\nA concise summary.\nWith additional Pi instructions.\n\n';
+    context.messages.push({ role: 'user', content: task, timestamp: 3 });
+
+    await collect({ apiKey: 'test-api-key', fetch: fetchMock }, context);
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(init.body)).input).toBe(task);
+  });
+
+  it('does not count unsent Pi context against the input limit', async () => {
+    const fetchMock = vi.fn(async () => response(completedResponse()));
+    const context = researchContext();
+    context.systemPrompt = 'x'.repeat(PARALLEL_RESPONSES_MAX_INPUT_CHARS);
+
+    const { result } = await collect(
+      { apiKey: 'test-api-key', fetch: fetchMock },
+      context
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.stopReason).toBe('stop');
+  });
+
   it('does not fall back to history for a non-textual latest task', async () => {
     const fetchMock = vi.fn();
     const context = researchContext();
@@ -274,7 +341,11 @@ describe('Parallel Responses model', () => {
   it('fails oversized input before making a request', async () => {
     const fetchMock = vi.fn();
     const context = researchContext();
-    context.systemPrompt = 'x'.repeat(PARALLEL_RESPONSES_MAX_INPUT_CHARS);
+    context.messages.push({
+      role: 'user',
+      content: 'x'.repeat(PARALLEL_RESPONSES_MAX_INPUT_CHARS),
+      timestamp: 3,
+    });
 
     const { events, result } = await collect(
       { apiKey: 'test-api-key', fetch: fetchMock },

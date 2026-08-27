@@ -16,7 +16,6 @@ describe('pi-subagents package contract', () => {
     );
 
     expect(manifest.name).toBe('@parallel-web/pi-extension');
-    expect(manifest.version).toBe('1.2.0');
     expect(manifest.files).toContain('agents');
     expect(manifest.pi.subagents.agents).toEqual(['./agents']);
   });
@@ -30,6 +29,7 @@ describe('pi-subagents package contract', () => {
     expect(agent).toContain('name: parallel-research');
     expect(agent).toContain('model: parallel/research');
     expect(agent).toContain('thinking: medium');
+    expect(agent).toMatch(/^tools:\s*$/m);
     expect(agent).toContain('systemPromptMode: replace');
     expect(agent).toContain('inheritProjectContext: false');
     expect(agent).toContain('inheritSkills: false');

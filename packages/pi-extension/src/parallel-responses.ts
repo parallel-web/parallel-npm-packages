@@ -1,5 +1,6 @@
 declare const __PACKAGE_VERSION__: string;
 
+import { readFileSync } from 'node:fs';
 import {
   createAssistantMessageEventStream,
   type Api,
@@ -17,6 +18,15 @@ export const PARALLEL_RESPONSES_DEFAULT_TIMEOUT_MS = 120_000;
 
 const RESPONSE_USAGE_CHARS_PER_TOKEN = 4;
 const RESEARCH_MAX_OUTPUT_TOKENS = 32_000;
+
+// Pi's assembled system prompt includes local runtime metadata. The shipped
+// agent body is the complete instruction boundary for this remote provider.
+const RESEARCH_INSTRUCTIONS = readFileSync(
+  new URL('../agents/parallel-research.md', import.meta.url),
+  'utf8'
+)
+  .replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '')
+  .trim();
 
 export const PARALLEL_RESEARCH_MODEL: Model<typeof PARALLEL_RESPONSES_API> = {
   id: 'research',
@@ -95,13 +105,29 @@ function latestUserText(context: Context): string {
     const message = context.messages[index];
     if (message.role !== 'user') continue;
 
-    const text =
+    let text =
       typeof message.content === 'string'
         ? message.content
         : message.content
             .filter((part) => part.type === 'text')
             .map((part) => part.text)
             .join('\n');
+
+    // pi-subagents duplicates its local artifact delivery instructions in the
+    // task and system prompt. Pi persists the final answer; that matching
+    // suffix is not part of the research question. Keep unmatched user text.
+    const outputSeparator = '\n\n---\n**Output:**\n';
+    const outputIndex = text.lastIndexOf(outputSeparator);
+    if (outputIndex !== -1) {
+      const delivery = text.slice(outputIndex + outputSeparator.length);
+      const promptDelivery = `Runtime output path override:\n${delivery}`;
+      if (
+        context.systemPrompt?.endsWith(promptDelivery) ||
+        context.systemPrompt?.includes(`${promptDelivery}\n\n`)
+      ) {
+        text = text.slice(0, outputIndex);
+      }
+    }
 
     if (text.trim()) return text;
 
@@ -310,9 +336,8 @@ export function streamParallelResponses(
       }
 
       const input = latestUserText(context);
-      const instructions = context.systemPrompt?.trim() || undefined;
       if (
-        input.length + (instructions?.length ?? 0) >
+        input.length + RESEARCH_INSTRUCTIONS.length >
         PARALLEL_RESPONSES_MAX_INPUT_CHARS
       ) {
         throw new Error(
@@ -324,7 +349,7 @@ export function streamParallelResponses(
       let payload: unknown = {
         model: 'parallel',
         input,
-        ...(instructions ? { instructions } : {}),
+        instructions: RESEARCH_INSTRUCTIONS,
         reasoning: { effort },
         stream: false,
       };

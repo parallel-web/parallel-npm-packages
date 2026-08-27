@@ -3,6 +3,7 @@ name: parallel-research
 description: One-shot cited web research through Parallel Responses
 model: parallel/research
 thinking: medium
+tools:
 systemPromptMode: replace
 inheritProjectContext: false
 inheritSkills: false
