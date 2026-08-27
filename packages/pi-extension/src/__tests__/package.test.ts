@@ -1,40 +1,16 @@
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const packageRoot = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '..'
-);
-
-describe('pi-subagents package contract', () => {
-  it('ships the Parallel research agent through the Pi manifest', () => {
+describe('Pi research package contract', () => {
+  it('ships research through the existing extension without a child package', () => {
     const manifest = JSON.parse(
-      readFileSync(resolve(packageRoot, 'package.json'), 'utf8')
+      readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
     );
-
     expect(manifest.name).toBe('@parallel-web/pi-extension');
-    expect(manifest.files).toContain('agents');
-    expect(manifest.pi.subagents.agents).toEqual(['./agents']);
-  });
-
-  it('pins a one-turn fresh agent to the Parallel research model', () => {
-    const agent = readFileSync(
-      resolve(packageRoot, 'agents', 'parallel-research.md'),
-      'utf8'
-    );
-
-    expect(agent).toContain('name: parallel-research');
-    expect(agent).toContain('model: parallel/research');
-    expect(agent).toContain('thinking: medium');
-    expect(agent).toMatch(/^tools:\s*$/m);
-    expect(agent).toContain('systemPromptMode: replace');
-    expect(agent).toContain('inheritProjectContext: false');
-    expect(agent).toContain('inheritSkills: false');
-    expect(agent).toContain('defaultContext: fresh');
-    expect(agent).toContain('completionGuard: false');
-    expect(agent).toContain('turnBudget: {"maxTurns":1,"graceTurns":0}');
+    expect(manifest.pi.extensions).toEqual(['./dist/index.js']);
+    expect(manifest.pi.subagents).toBeUndefined();
+    expect(manifest.files).not.toContain('agents');
+    expect(manifest.dependencies['pi-subagents']).toBeUndefined();
+    expect(manifest.peerDependencies['pi-subagents']).toBeUndefined();
   });
 });

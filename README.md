@@ -7,7 +7,7 @@ Monorepo for @parallel-web npm packages.
 - [`@parallel-web/ai-sdk-tools`](./packages/ai-sdk-tools) - AI SDK tools for Parallel Web
 - [`@parallel-web/dsh-web-search`](./packages/dsh-web-search) - Parallel Search provider for DeepSeek Harness
 - [`@parallel-web/opencode-plugin`](./packages/opencode-plugin) - Opencode plugin for Parallel Web
-- [`@parallel-web/pi-extension`](./packages/pi-extension) - Pi web tools and a native Parallel Responses research subagent
+- [`@parallel-web/pi-extension`](./packages/pi-extension) - Pi web search, fetch, and cited research tools
 - `@parallel-web/oauth` - Internal, unpublished shared PKCE OAuth helper. Bundled into the opencode plugin and pi extension at build time (`noExternal`), so it is never installed by consumers and is intentionally marked `private`.
 
 ## Development

@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -10,6 +13,7 @@ import {
   truncateHead,
 } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
+import { runParallelResearch } from './parallel-responses';
 import {
   getParallelApiKey,
   getParallelAuthStatus,
@@ -62,16 +66,14 @@ function suppressSkillsFromPrompt(systemPrompt: string) {
   );
 }
 
-const WEB_GROUNDING_GUIDANCE = `
-## Grounding and web usage
-
-You should proactively use available web tools to ground your answers when doing so would improve correctness, freshness, or source quality.
-
-- Use web_search when the task involves current information, external facts, source discovery, recent changes, or any claim you are not highly confident about.
-- Use web_fetch when the user provides a URL, when a search result should be verified against the source, or when primary-source content would improve the answer.
-- Prefer grounded, sourced answers over unsupported recall when freshness or factual precision matters.
-- If a grounded answer would likely be better than answering from memory, use the web tools first.
-`;
+const WEB_TOOL_GUIDANCE = {
+  web_research:
+    'Use web_research for a complete answer that requires current web research and synthesis. Pass the full self-contained question, including constraints, in one call; make focused follow-ups only for unresolved parts.',
+  web_search:
+    'Use web_search for source discovery and raw excerpts when you need to investigate sources yourself.',
+  web_fetch:
+    'Use web_fetch to read a known URL or inspect the original source behind a claim.',
+};
 
 export default function (pi: ExtensionAPI) {
   const parallelSessionId = randomUUID();
@@ -143,19 +145,85 @@ export default function (pi: ExtensionAPI) {
   pi.on('before_agent_start', async (event) => {
     const filteredPrompt = suppressSkillsFromPrompt(event.systemPrompt);
     const selectedTools = event.systemPromptOptions.selectedTools ?? [];
-    const hasWebTools =
-      selectedTools.includes('web_search') ||
-      selectedTools.includes('web_fetch');
+    const guidance = Object.entries(WEB_TOOL_GUIDANCE)
+      .filter(([tool]) => selectedTools.includes(tool))
+      .map(([, text]) => `- ${text}`);
 
-    if (!hasWebTools) {
+    if (guidance.length === 0) {
       return filteredPrompt === event.systemPrompt
         ? undefined
         : { systemPrompt: filteredPrompt };
     }
 
     return {
-      systemPrompt: `${filteredPrompt}\n${WEB_GROUNDING_GUIDANCE}`,
+      systemPrompt: `${filteredPrompt}\n\n## Grounding and web usage\n\nUse available web tools when current information or source evidence would improve the answer.\n\n${guidance.join('\n')}\n\nPrefer sourced answers and preserve the returned citations.`,
     };
+  });
+
+  pi.registerTool({
+    name: 'web_research',
+    label: 'Web Research',
+    description:
+      "Answer a complete question using Parallel's Responses API. Delegates multi-step web research and returns a synthesized answer with sources, not raw search results. One call can handle the full research question.",
+    promptSnippet:
+      'Get a cited answer to a complete web research question using Parallel',
+    promptGuidelines: [
+      'Use web_research for questions that need web research and synthesis; pass the complete question in one call before making focused follow-ups.',
+      'Include dates, constraints, and relevant context in query. Research cannot see this conversation or local files; include only context that is safe to send.',
+      'Use low effort for focused lookups, medium for general research, and high only for extensive research. The default is medium.',
+    ],
+    parameters: Type.Object({
+      query: Type.String({
+        minLength: 1,
+        description:
+          'The complete, self-contained research question, including all dates, constraints, and relevant context that is safe to send. Research has no access to the conversation or local files.',
+      }),
+      effort: Type.Optional(
+        Type.Union(
+          [Type.Literal('low'), Type.Literal('medium'), Type.Literal('high')],
+          {
+            description:
+              'Research depth: low for focused lookups, medium for general research (default), high for extensive research.',
+          }
+        )
+      ),
+    }),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      onUpdate?.({
+        content: [{ type: 'text', text: 'Researching the web...' }],
+        details: { provider: 'parallel', product: 'responses' },
+      });
+      const result = await runWithAuth(ctx, (apiKey) =>
+        runParallelResearch(
+          apiKey,
+          { query: params.query, effort: params.effort },
+          signal
+        )
+      );
+      const preview = truncateHead(result.text, {
+        maxLines: DEFAULT_MAX_LINES,
+        maxBytes: DEFAULT_MAX_BYTES,
+      });
+      let text = preview.content;
+      let outputFile: string | undefined;
+      if (preview.truncated) {
+        // Keep the complete answer and citations available when Pi's context
+        // limit requires a preview. Normal research results create no file.
+        const directory = await mkdtemp(join(tmpdir(), 'parallel-research-'));
+        outputFile = join(directory, 'research.md');
+        await writeFile(outputFile, result.text, { mode: 0o600 });
+        text += `\n\n[Research output truncated. Full answer and sources: ${outputFile}]`;
+      }
+      return {
+        content: [{ type: 'text', text }],
+        details: {
+          provider: 'parallel',
+          product: 'responses',
+          effort: result.effort,
+          ...(outputFile ? { outputFile } : {}),
+        },
+      };
+    },
   });
 
   pi.registerTool({
@@ -166,7 +234,7 @@ export default function (pi: ExtensionAPI) {
     promptSnippet:
       "Search the web using Parallel's Search API for current information",
     promptGuidelines: [
-      'Use web_search when the user asks for current web information, discovery, or source finding.',
+      'Use web_search for source discovery and raw excerpts when you need to investigate sources yourself.',
       'Provide 2-3 concise keyword search queries when possible; search_queries is required.',
     ],
     parameters: Type.Object({

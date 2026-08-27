@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFile, rm, stat } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -10,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   registerParallelAuthProvider: vi.fn(),
   runParallelSearch: vi.fn(),
   runParallelExtract: vi.fn(),
+  runParallelResearch: vi.fn(),
   isParallelAuthenticationError: vi.fn(),
 }));
 
@@ -23,6 +26,10 @@ vi.mock('../parallel-client.js', () => ({
   runParallelSearch: mocks.runParallelSearch,
   runParallelExtract: mocks.runParallelExtract,
   isParallelAuthenticationError: mocks.isParallelAuthenticationError,
+}));
+
+vi.mock('../parallel-responses.js', () => ({
+  runParallelResearch: mocks.runParallelResearch,
 }));
 
 type MockPi = {
@@ -82,6 +89,18 @@ describe('@parallel-web/pi-extension', () => {
     expect(typeof module.default).toBe('function');
   });
 
+  it('registers research as a normal tool without another package', async () => {
+    const extension = (await import('../index.js')).default;
+    const pi = createMockPi();
+    extension(pi as unknown as ExtensionAPI);
+    expect(getRegisteredTool(pi, 'web_research')).toEqual(
+      expect.objectContaining({
+        name: 'web_research',
+        execute: expect.any(Function),
+      })
+    );
+  });
+
   it('should register the login command and web tools', async () => {
     const extension = (await import('../index.js')).default;
     const pi = createMockPi();
@@ -97,7 +116,7 @@ describe('@parallel-web/pi-extension', () => {
       })
     );
 
-    expect(pi.registerTool).toHaveBeenCalledTimes(2);
+    expect(pi.registerTool).toHaveBeenCalledTimes(3);
 
     const searchTool = getRegisteredTool(pi, 'web_search');
     expect(searchTool).toEqual(
@@ -107,7 +126,7 @@ describe('@parallel-web/pi-extension', () => {
         description: expect.stringContaining("Parallel's Search API"),
         promptSnippet: expect.stringContaining("Parallel's Search API"),
         promptGuidelines: [
-          'Use web_search when the user asks for current web information, discovery, or source finding.',
+          'Use web_search for source discovery and raw excerpts when you need to investigate sources yourself.',
           'Provide 2-3 concise keyword search queries when possible; search_queries is required.',
         ],
         execute: expect.any(Function),
@@ -148,7 +167,39 @@ describe('@parallel-web/pi-extension', () => {
     });
     expect(result.systemPrompt).toContain('Grounding and web usage');
     expect(result.systemPrompt).toContain('Use web_search');
-    expect(result.systemPrompt).toContain('Use web_fetch');
+    expect(result.systemPrompt).not.toContain('Use web_fetch');
+    expect(result.systemPrompt).not.toContain('Use web_research');
+  });
+
+  it('exposes routing guidance only for active web tools', async () => {
+    const extension = (await import('../index.js')).default;
+    const pi = createMockPi();
+    extension(pi as unknown as ExtensionAPI);
+    const handler = getEventHandler(pi, 'before_agent_start');
+    const all = await handler({
+      systemPrompt: 'Base prompt',
+      systemPromptOptions: {
+        selectedTools: ['web_research', 'web_search', 'web_fetch'],
+      },
+    });
+    expect(all.systemPrompt).toContain(
+      'Use web_research for a complete answer'
+    );
+    expect(all.systemPrompt).toContain('Use web_search for source discovery');
+    expect(all.systemPrompt).toContain('Use web_fetch to read a known URL');
+    const researchOnly = await handler({
+      systemPrompt: 'Base prompt',
+      systemPromptOptions: { selectedTools: ['web_research'] },
+    });
+    expect(researchOnly.systemPrompt).toContain('Use web_research');
+    expect(researchOnly.systemPrompt).not.toContain('Use web_search');
+    expect(researchOnly.systemPrompt).not.toContain('Use web_fetch');
+    expect(
+      await handler({
+        systemPrompt: 'Base prompt',
+        systemPromptOptions: { selectedTools: ['read'] },
+      })
+    ).toBeUndefined();
   });
 
   it('should suppress overlapping Parallel skills from the system prompt', async () => {
@@ -469,5 +520,101 @@ describe('@parallel-web/pi-extension', () => {
       }),
       undefined
     );
+  });
+  it('web_research uses shared auth and sends only explicit arguments with cancellation', async () => {
+    mocks.getParallelApiKey.mockResolvedValue('stored-api-key');
+    mocks.runParallelResearch.mockResolvedValue({
+      text: 'Answer with [source](https://example.com)',
+      effort: 'low',
+    });
+    const extension = (await import('../index.js')).default;
+    const pi = createMockPi();
+    extension(pi as unknown as ExtensionAPI);
+    const tool = getRegisteredTool(pi, 'web_research');
+    const signal = new AbortController().signal;
+    const onUpdate = vi.fn();
+    const result = await tool.execute(
+      'research-1',
+      {
+        query: 'A complete question',
+        effort: 'low',
+        history: 'private-history',
+      },
+      signal,
+      onUpdate,
+      createToolContext({
+        cwd: '/private-project',
+        model: { id: 'fixture-parent' },
+      })
+    );
+    expect(mocks.runParallelResearch).toHaveBeenCalledWith(
+      'stored-api-key',
+      {
+        query: 'A complete question',
+        effort: 'low',
+      },
+      signal
+    );
+    expect(result).toEqual({
+      content: [
+        { type: 'text', text: 'Answer with [source](https://example.com)' },
+      ],
+      details: { provider: 'parallel', product: 'responses', effort: 'low' },
+    });
+    expect(onUpdate).toHaveBeenCalled();
+    expect(result.details.outputFile).toBeUndefined();
+  });
+
+  it('web_research keeps the full answer and citations when its preview is truncated', async () => {
+    mocks.getParallelApiKey.mockResolvedValue('stored-api-key');
+    const fullText =
+      'finding\n'.repeat(5_000) +
+      '\nSources:\n[Final source](https://example.com/end)';
+    mocks.runParallelResearch.mockResolvedValue({
+      text: fullText,
+      effort: 'medium',
+    });
+    const extension = (await import('../index.js')).default;
+    const pi = createMockPi();
+    extension(pi as unknown as ExtensionAPI);
+    const result = await getRegisteredTool(pi, 'web_research').execute(
+      'research-long',
+      {
+        query: 'A complete question',
+      },
+      undefined,
+      undefined,
+      createToolContext()
+    );
+    const outputFile = result.details.outputFile;
+    try {
+      expect(result.content[0].text).toContain('Research output truncated');
+      expect(result.content[0].text).toContain(outputFile);
+      expect(result.content[0].text.length).toBeLessThan(fullText.length);
+      expect(await readFile(outputFile, 'utf8')).toBe(fullText);
+      expect((await stat(outputFile)).mode & 0o077).toBe(0);
+    } finally {
+      if (outputFile)
+        await rm(dirname(outputFile), { recursive: true, force: true });
+    }
+  });
+
+  it('web_research reuses the existing missing-credential guidance', async () => {
+    mocks.getParallelApiKey.mockResolvedValue(undefined);
+    const extension = (await import('../index.js')).default;
+    const pi = createMockPi();
+    extension(pi as unknown as ExtensionAPI);
+    await expect(
+      getRegisteredTool(pi, 'web_research').execute(
+        'research-auth',
+        {
+          query: 'A complete question',
+        },
+        undefined,
+        undefined,
+        createToolContext()
+      )
+    ).rejects.toThrow('/login parallel');
+    expect(mocks.runParallelResearch).not.toHaveBeenCalled();
   });
 });
