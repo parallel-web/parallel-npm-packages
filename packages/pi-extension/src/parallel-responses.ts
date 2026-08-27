@@ -113,6 +113,22 @@ function latestUserText(context: Context): string {
             .map((part) => part.text)
             .join('\n');
 
+    // Long pi-subagents tasks arrive through a temporary @file. Pi adds its
+    // absolute path to the message; unwrap only that command-line input, not
+    // file-shaped text supplied by the user. No file is read here.
+    const taskFileArg = process.argv.find((arg) =>
+      /^@.*[/\\]pi-subagent-[^/\\]+[/\\]task\.md$/.test(arg)
+    );
+    const filePrefix = taskFileArg && `<file name="${taskFileArg.slice(1)}">\n`;
+    const fileSuffix = '\n</file>\n';
+    if (
+      filePrefix &&
+      text.startsWith(filePrefix) &&
+      text.endsWith(fileSuffix)
+    ) {
+      text = text.slice(filePrefix.length, -fileSuffix.length);
+    }
+
     // pi-subagents duplicates its local artifact delivery instructions in the
     // task and system prompt. Pi persists the final answer; that matching
     // suffix is not part of the research question. Keep unmatched user text.

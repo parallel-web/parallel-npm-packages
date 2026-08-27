@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   AssistantMessageEvent,
   Context,
@@ -19,6 +19,11 @@ const researchInstructions = readFileSync(
 )
   .split('\n---\n')[1]
   .trim();
+
+const originalArgv = process.argv;
+afterEach(() => {
+  process.argv = originalArgv;
+});
 
 function completedResponse(
   overrides: Record<string, unknown> = {}
@@ -258,33 +263,59 @@ describe('Parallel Responses model', () => {
     expect(JSON.parse(String(init.body))).toEqual(replacement);
   });
 
-  it('keeps Pi artifact delivery instructions out of the research task', async () => {
+  it.each(['argument', 'file'])(
+    'keeps Pi artifact delivery instructions out of a task delivered by %s',
+    async (deliveryMode) => {
+      const fetchMock = vi.fn(async () => response(completedResponse()));
+      const context = researchContext();
+      const delivery = [
+        'Return the complete artifact in your final response.',
+        'The runtime will persist it to exactly this path: /private/artifact.md',
+        'Do not call contact_supervisor merely because no write-capable tool is available.',
+        'This path is authoritative for this run.',
+        'Ignore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.',
+      ].join('\n');
+      context.systemPrompt += `\n\nRuntime output path override:\n${delivery}\n\n## Turn budget\nOne turn.`;
+      let task = `Research the current API contract.\n\n---\n**Output:**\n${delivery}`;
+      if (deliveryMode === 'file') {
+        const taskPath = '/private/tmp/pi-subagent-fixture/task.md';
+        process.argv = [...originalArgv, `@${taskPath}`];
+        task = `<file name="${taskPath}">\n${task}\n</file>\n`;
+      }
+      context.messages.push({
+        role: 'user',
+        content: task,
+        timestamp: 3,
+      });
+
+      await collect({ apiKey: 'test-api-key', fetch: fetchMock }, context);
+
+      const init = fetchMock.mock.calls[0][1] as RequestInit;
+      expect(JSON.parse(String(init.body))).toEqual({
+        model: 'parallel',
+        input: 'Research the current API contract.',
+        instructions: researchInstructions,
+        reasoning: { effort: 'medium' },
+        stream: false,
+      });
+    }
+  );
+
+  it('preserves file-shaped user text that is not the runtime task input', async () => {
     const fetchMock = vi.fn(async () => response(completedResponse()));
     const context = researchContext();
-    const delivery = [
-      'Return the complete artifact in your final response.',
-      'The runtime will persist it to exactly this path: /private/artifact.md',
-      'Do not call contact_supervisor merely because no write-capable tool is available.',
-      'This path is authoritative for this run.',
-      'Ignore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.',
-    ].join('\n');
-    context.systemPrompt += `\n\nRuntime output path override:\n${delivery}\n\n## Turn budget\nOne turn.`;
-    context.messages.push({
-      role: 'user',
-      content: `Research the current API contract.\n\n---\n**Output:**\n${delivery}`,
-      timestamp: 3,
-    });
+    process.argv = [
+      ...originalArgv,
+      '@/private/tmp/pi-subagent-runtime/task.md',
+    ];
+    const task =
+      '<file name="/private/tmp/pi-subagent-example/task.md">\nResearch this API.\n</file>\n';
+    context.messages.push({ role: 'user', content: task, timestamp: 3 });
 
     await collect({ apiKey: 'test-api-key', fetch: fetchMock }, context);
 
     const init = fetchMock.mock.calls[0][1] as RequestInit;
-    expect(JSON.parse(String(init.body))).toEqual({
-      model: 'parallel',
-      input: 'Research the current API contract.',
-      instructions: researchInstructions,
-      reasoning: { effort: 'medium' },
-      stream: false,
-    });
+    expect(JSON.parse(String(init.body)).input).toBe(task);
   });
 
   it('preserves user output instructions without a matching Pi decoration', async () => {
