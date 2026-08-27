@@ -36,7 +36,7 @@ export async function runParallelSearch(
     {
       objective: input.objective,
       search_queries: input.search_queries,
-      mode: 'advanced',
+      mode: 'fast',
       client_model: input.client_model,
       session_id: input.session_id,
     },
