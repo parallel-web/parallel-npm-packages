@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFile, rm, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+} from '@earendil-works/pi-coding-agent';
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -187,6 +191,9 @@ describe('@parallel-web/pi-extension', () => {
     );
     expect(all.systemPrompt).toContain('Use web_search for source discovery');
     expect(all.systemPrompt).toContain('Use web_fetch to read a known URL');
+    expect(all.systemPrompt).toContain(
+      'source URLs as clickable Markdown links'
+    );
     const researchOnly = await handler({
       systemPrompt: 'Base prompt',
       systemPromptOptions: { selectedTools: ['web_research'] },
@@ -565,39 +572,50 @@ describe('@parallel-web/pi-extension', () => {
     expect(result.details.outputFile).toBeUndefined();
   });
 
-  it('web_research keeps the full answer and citations when its preview is truncated', async () => {
-    mocks.getParallelApiKey.mockResolvedValue('stored-api-key');
-    const fullText =
-      'finding\n'.repeat(5_000) +
-      '\nSources:\n[Final source](https://example.com/end)';
-    mocks.runParallelResearch.mockResolvedValue({
-      text: fullText,
-      effort: 'medium',
-    });
-    const extension = (await import('../index.js')).default;
-    const pi = createMockPi();
-    extension(pi as unknown as ExtensionAPI);
-    const result = await getRegisteredTool(pi, 'web_research').execute(
-      'research-long',
-      {
-        query: 'A complete question',
-      },
-      undefined,
-      undefined,
-      createToolContext()
-    );
-    const outputFile = result.details.outputFile;
-    try {
-      expect(result.content[0].text).toContain('Research output truncated');
-      expect(result.content[0].text).toContain(outputFile);
-      expect(result.content[0].text.length).toBeLessThan(fullText.length);
-      expect(await readFile(outputFile, 'utf8')).toBe(fullText);
-      expect((await stat(outputFile)).mode & 0o077).toBe(0);
-    } finally {
-      if (outputFile)
-        await rm(dirname(outputFile), { recursive: true, force: true });
+  it.each(['line', 'byte'])(
+    'web_research keeps the full answer and citations at the %s limit',
+    async (limit) => {
+      mocks.getParallelApiKey.mockResolvedValue('stored-api-key');
+      const fullText =
+        (limit === 'line'
+          ? 'finding\n'.repeat(5_000)
+          : '界'.repeat(DEFAULT_MAX_BYTES)) +
+        '\nSources:\n[Final source](https://example.com/end)';
+      mocks.runParallelResearch.mockResolvedValue({
+        text: fullText,
+        effort: 'medium',
+      });
+      const extension = (await import('../index.js')).default;
+      const pi = createMockPi();
+      extension(pi as unknown as ExtensionAPI);
+      const result = await getRegisteredTool(pi, 'web_research').execute(
+        'research-long',
+        {
+          query: 'A complete question',
+        },
+        undefined,
+        undefined,
+        createToolContext()
+      );
+      const outputFile = result.details.outputFile;
+      try {
+        expect(result.content[0].text).toContain('Research output truncated');
+        expect(result.content[0].text).toContain(outputFile);
+        expect(result.content[0].text.length).toBeLessThan(fullText.length);
+        expect(Buffer.byteLength(result.content[0].text)).toBeLessThanOrEqual(
+          DEFAULT_MAX_BYTES
+        );
+        expect(result.content[0].text.split('\n').length).toBeLessThanOrEqual(
+          DEFAULT_MAX_LINES
+        );
+        expect(await readFile(outputFile, 'utf8')).toBe(fullText);
+        expect((await stat(outputFile)).mode & 0o077).toBe(0);
+      } finally {
+        if (outputFile)
+          await rm(dirname(outputFile), { recursive: true, force: true });
+      }
     }
-  });
+  );
 
   it('web_research reuses the existing missing-credential guidance', async () => {
     mocks.getParallelApiKey.mockResolvedValue(undefined);

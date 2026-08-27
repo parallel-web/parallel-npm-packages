@@ -156,7 +156,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     return {
-      systemPrompt: `${filteredPrompt}\n\n## Grounding and web usage\n\nUse available web tools when current information or source evidence would improve the answer.\n\n${guidance.join('\n')}\n\nPrefer sourced answers and preserve the returned citations.`,
+      systemPrompt: `${filteredPrompt}\n\n## Grounding and web usage\n\nUse available web tools when current information or source evidence would improve the answer.\n\n${guidance.join('\n')}\n\nWhen citing web evidence, include the returned source URLs as clickable Markdown links. Do not replace source links with source names alone.`,
     };
   });
 
@@ -212,7 +212,12 @@ export default function (pi: ExtensionAPI) {
         const directory = await mkdtemp(join(tmpdir(), 'parallel-research-'));
         outputFile = join(directory, 'research.md');
         await writeFile(outputFile, result.text, { mode: 0o600 });
-        text += `\n\n[Research output truncated. Full answer and sources: ${outputFile}]`;
+        const notice = `\n\n[Research output truncated. Full answer and sources: ${outputFile}]`;
+        text =
+          truncateHead(result.text, {
+            maxLines: DEFAULT_MAX_LINES - 2,
+            maxBytes: DEFAULT_MAX_BYTES - Buffer.byteLength(notice),
+          }).content + notice;
       }
       return {
         content: [{ type: 'text', text }],
