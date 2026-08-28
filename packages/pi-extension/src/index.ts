@@ -211,18 +211,7 @@ export default function (pi: ExtensionAPI) {
       });
       const result = await runWithAuth(
         ctx,
-        (apiKey) =>
-          runParallelResearch(
-            apiKey,
-            {
-              query: params.query,
-              effort: params.effort,
-              ...(params.previous_response_id !== undefined
-                ? { previous_response_id: params.previous_response_id }
-                : {}),
-            },
-            signal
-          ),
+        (apiKey) => runParallelResearch(apiKey, params, signal),
         // Responses errors carry HTTP status. Their text can echo opaque IDs,
         // so words such as "unauthorized" do not identify rejected credentials.
         (error) =>

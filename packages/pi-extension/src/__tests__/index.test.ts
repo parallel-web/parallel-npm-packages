@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFile, rm, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { validateToolArguments } from '@earendil-works/pi-ai';
@@ -83,6 +83,8 @@ function createToolContext(overrides: Record<string, unknown> = {}) {
 }
 
 describe('@parallel-web/pi-extension', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.PARALLEL_API_KEY;
@@ -643,16 +645,30 @@ describe('@parallel-web/pi-extension', () => {
   });
 
   it('web_research uses shared auth and sends only explicit arguments with cancellation', async () => {
+    const { runParallelResearch } = await vi.importActual<
+      typeof import('../parallel-responses.js')
+    >('../parallel-responses.js');
     mocks.getParallelApiKey.mockResolvedValue('stored-api-key');
-    mocks.runParallelResearch.mockResolvedValue({
-      text: 'Answer with [source](https://example.com)',
-      effort: 'low',
-    });
+    mocks.runParallelResearch.mockImplementationOnce(runParallelResearch);
+    const answer = 'Answer with [source](https://example.com)';
+    const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      Response.json({
+        status: 'completed',
+        output: [
+          {
+            type: 'message',
+            content: [{ type: 'output_text', text: answer }],
+          },
+        ],
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
     const extension = (await import('../index.js')).default;
     const pi = createMockPi();
     extension(pi as unknown as ExtensionAPI);
     const tool = getRegisteredTool(pi, 'web_research');
-    const signal = new AbortController().signal;
+    const controller = new AbortController();
+    const signal = controller.signal;
     const onUpdate = vi.fn();
     const result = await tool.execute(
       'research-1',
@@ -660,6 +676,7 @@ describe('@parallel-web/pi-extension', () => {
         query: 'A complete question',
         effort: 'low',
         history: 'private-history',
+        instructions: 'private-instructions',
       },
       signal,
       onUpdate,
@@ -668,14 +685,22 @@ describe('@parallel-web/pi-extension', () => {
         model: { id: 'fixture-parent' },
       })
     );
-    expect(mocks.runParallelResearch).toHaveBeenCalledWith(
-      'stored-api-key',
-      {
-        query: 'A complete question',
-        effort: 'low',
-      },
-      signal
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, request] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://api.parallel.ai/v1/responses');
+    expect(new Headers(request?.headers).get('Authorization')).toBe(
+      'Bearer stored-api-key'
     );
+    expect(JSON.parse(String(request?.body))).toEqual({
+      model: 'parallel',
+      input: 'A complete question',
+      instructions: expect.stringContaining('Research the user'),
+      reasoning: { effort: 'low' },
+      stream: false,
+    });
+    expect(request?.signal?.aborted).toBe(false);
+    controller.abort();
+    expect(request?.signal?.aborted).toBe(true);
     expect(result).toEqual({
       content: [
         { type: 'text', text: 'Answer with [source](https://example.com)' },

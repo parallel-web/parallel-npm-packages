@@ -230,7 +230,7 @@ export async function runParallelResearch(
         instructions: RESEARCH_INSTRUCTIONS,
         reasoning: { effort },
         stream: false,
-        ...(previous_response_id !== undefined ? { previous_response_id } : {}),
+        previous_response_id,
       }),
       signal: requestSignal,
       redirect: 'error',
