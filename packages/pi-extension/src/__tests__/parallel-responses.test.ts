@@ -132,7 +132,7 @@ describe('Parallel research request', () => {
       String(fetchMock.mock.calls[0][1]?.body)
     );
     const capacity =
-      PARALLEL_RESPONSES_MAX_INPUT_CHARS - [...instructions].length;
+      PARALLEL_RESPONSES_MAX_INPUT_CHARS - [...instructions].length - 1;
     fetchMock.mockClear();
 
     await runParallelResearch(apiKey, { query: '🔎'.repeat(capacity) });
@@ -153,6 +153,152 @@ describe('Parallel research request', () => {
 });
 
 describe('Parallel research evidence', () => {
+  it('preserves the cited passages for each source using Unicode character ranges', async () => {
+    const first = 'Alpha shipped in 2024.';
+    const second = 'Beta shipped in 2025.';
+    const answer = '🔎 ' + first + ' ' + second;
+    const firstCitation = {
+      type: 'url_citation',
+      url: 'https://example.com/alpha',
+      title: 'Alpha source',
+      start_index: 2,
+      end_index: 2 + [...first].length,
+    };
+    mockResponse(
+      completed(answer, [
+        firstCitation,
+        firstCitation,
+        {
+          ...firstCitation,
+          url: 'https://example.com/both',
+          title: 'Combined source',
+        },
+        {
+          ...firstCitation,
+          url: 'https://example.com/both',
+          title: 'Combined source',
+          start_index: 3 + [...first].length,
+          end_index: [...answer].length,
+        },
+      ])
+    );
+    const { text } = await runParallelResearch(apiKey, { query });
+    expect(text.startsWith(answer + '\n\nSources:\n')).toBe(true);
+    const sources = text.split('\nSources:\n')[1];
+    const alpha = sources.slice(sources.indexOf('1. '), sources.indexOf('2. '));
+    const both = sources.slice(sources.indexOf('2. '));
+    expect(alpha.match(/Cited answer passage/g)).toHaveLength(1);
+    expect(alpha).toContain(JSON.stringify(first));
+    expect(alpha).not.toContain(JSON.stringify(second));
+    expect(both).toContain(JSON.stringify(first));
+    expect(both).toContain(JSON.stringify(second));
+    expect(alpha).toContain('part 1, characters 2:24');
+  });
+
+  it('retains separate locations and overlapping spans for the same source', async () => {
+    const claim = 'Revenue increased 10%.';
+    const answer = 'Company A\n' + claim + '\n\nCompany B\n' + claim;
+    const startA = [...'Company A\n'].length;
+    const startB = [...('Company A\n' + claim + '\n\nCompany B\n')].length;
+    const citation = {
+      type: 'url_citation',
+      url: 'https://example.com/revenue',
+      start_index: startA,
+      end_index: startA + [...claim].length,
+    };
+    mockResponse(
+      completed(answer, [
+        citation,
+        {
+          ...citation,
+          start_index: startB,
+          end_index: startB + [...claim].length,
+        },
+        { ...citation, end_index: startA + [...'Revenue increased'].length },
+      ])
+    );
+    const { text } = await runParallelResearch(apiKey, { query });
+    const sources = text.split('\nSources:\n')[1];
+    expect(sources.match(/Cited answer passage/g)).toHaveLength(3);
+    expect(sources.match(/"Revenue increased 10%."/g)).toHaveLength(2);
+    expect(sources).toContain('characters 10:32');
+    expect(sources).toContain('characters 44:66');
+    expect(sources).toContain('"Revenue increased"');
+  });
+
+  it('resolves each passage against its original text part without editing Markdown', async () => {
+    const first = '  🔎 A [link](https://example.com/path).\n';
+    const second = 'Code:\n\n~~~js\nconst value = "🔎";\n~~~\n';
+    const passage = 'const value = "🔎";';
+    const firstStart = [...'  🔎 '].length;
+    const secondStart = [...'Code:\n\n~~~js\n'].length;
+    const payload = completed(first, [
+      {
+        type: 'url_citation',
+        url: 'https://example.com/first',
+        start_index: firstStart,
+        end_index: [...first].length - 1,
+      },
+    ]);
+    payload.output[0].content.push({
+      type: 'output_text',
+      text: second,
+      annotations: [
+        {
+          type: 'url_citation',
+          url: 'https://example.com/code',
+          start_index: secondStart,
+          end_index: secondStart + [...passage].length,
+        },
+      ],
+    });
+    mockResponse(payload);
+    const { text } = await runParallelResearch(apiKey, { query });
+    expect(text.split('\n\nSources:\n')[0]).toBe(
+      [first, second].join('\n\n').trim()
+    );
+    expect(text).toContain('part 1, characters 4:');
+    expect(text).toContain('part 2, characters 13:');
+    expect(text).toContain(JSON.stringify(passage));
+    expect(text).toContain(
+      JSON.stringify('A [link](https://example.com/path).')
+    );
+  });
+
+  it.each([
+    [0, 0],
+    [-1, 5],
+    [3, 3],
+    [5, 1],
+    [0, 200],
+    [0.5, 3],
+    [0, 3.5],
+    ['0', 4],
+    [0, '4'],
+    [null, 4],
+    [0, null],
+    [undefined, 4],
+    [0, undefined],
+  ])(
+    'keeps the source without inventing a passage for indices %j:%j',
+    async (start, end) => {
+      mockResponse(
+        completed('A finding.', [
+          {
+            type: 'url_citation',
+            url: 'https://example.com/source',
+            start_index: start,
+            end_index: end,
+          },
+        ])
+      );
+      const { text } = await runParallelResearch(apiKey, { query });
+      expect(text).toContain('](<https://example.com/source>)');
+      expect(text).not.toContain('Cited answer passage');
+      expect(text).not.toContain('character offsets');
+    }
+  );
+
   it('keeps multiple text parts and safe citations without fabricating sources', async () => {
     const payload = completed('First finding.', [
       { type: 'url_citation', url: 'javascript:alert(1)', title: 'Unsafe' },

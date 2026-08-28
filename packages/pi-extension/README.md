@@ -56,8 +56,9 @@ web_research({
 
 `query` must be a complete, self-contained question. Research does not see the
 conversation or local files, so include relevant constraints and only context
-that is safe to send. Start with the full question in one call, then make
-focused follow-ups for anything left unresolved.
+that is safe to send. Start with the full question in one call. For focused
+follow-ups, restate the relevant constraints and findings because earlier
+research calls are not automatically included.
 
 `effort` is optional and defaults to `medium`, matching the Responses API
 default. Use `low` for focused lookups, `medium` for general research, and
@@ -65,8 +66,10 @@ default. Use `low` for focused lookups, `medium` for general research, and
 the [current pricing](https://docs.parallel.ai/getting-started/pricing).
 
 Each invocation makes one non-streaming `POST /v1/responses` request, with no
-automatic retries, background jobs, or remote continuation state. The local
-deadline is 120 seconds, including reading the response. Cancelling the tool
+automatic retries or background jobs. Calls are independent: the tool does
+not pass `previous_response_id` to reuse earlier research. The local deadline
+is 120 seconds, including reading the response; slower valid research can
+exceed this client limit. Cancelling the tool
 aborts the local request on a best-effort basis; it does not confirm that work
 stopped on the server. A manual retry is a new request and may incur a new charge.
 
@@ -76,10 +79,15 @@ local files, cwd, environment variables, Pi tools, or session metadata.
 Anything the calling agent includes in `query` is sent to Parallel.
 
 The tool rejects requests over 20,000 combined instruction and input
-characters before sending them. It preserves the answer and renders returned
-HTTP(S) citations as a deduplicated Markdown source list. Results that exceed
-Pi's output limits are shown as a marked preview with a path to the complete
-answer and sources in a private temporary file.
+characters, including the separator the API counts, before sending them.
+It preserves the answer and renders returned HTTP(S) citations as a
+deduplicated Markdown source list. When a citation identifies a passage,
+the source includes that exact quoted answer text and its location in the
+original text part. These are passages from the answer, not excerpts from
+the source page. Unresolved citation ranges keep the source link without
+inventing a passage. Results that exceed Pi's output limits are shown as a
+marked preview with a path to the complete answer and sources in a private
+temporary file.
 
 ## Dogfooding Locally
 

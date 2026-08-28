@@ -30,7 +30,7 @@ function renderResearch(payload: unknown): string {
   }
 
   const texts: string[] = [];
-  const sources = new Map<string, string>();
+  const sources = new Map<string, { title: string; passages: Set<string> }>();
   for (const item of payload.output) {
     if (!isRecord(item) || typeof item.type !== 'string') {
       throw new Error('Parallel returned malformed research output.');
@@ -52,6 +52,8 @@ function renderResearch(payload: unknown): string {
       }
       texts.push(content.text);
       if (!Array.isArray(content.annotations)) continue;
+      // API citation offsets count Unicode code points, not UTF-16 units.
+      const characters = [...content.text];
       for (const citation of content.annotations) {
         if (
           !isRecord(citation) ||
@@ -70,7 +72,27 @@ function renderResearch(payload: unknown): string {
         const href = url.toString();
         const title =
           typeof citation.title === 'string' ? citation.title.trim() : '';
-        if (!sources.has(href)) sources.set(href, title || href);
+        let source = sources.get(href);
+        if (!source) {
+          source = { title: title || href, passages: new Set() };
+          sources.set(href, source);
+        }
+        const start = citation.start_index;
+        const end = citation.end_index;
+        if (
+          typeof start === 'number' &&
+          typeof end === 'number' &&
+          Number.isSafeInteger(start) &&
+          Number.isSafeInteger(end) &&
+          start >= 0 &&
+          end > start &&
+          end <= characters.length
+        ) {
+          const passage = characters.slice(start, end).join('');
+          source.passages.add(
+            `Cited answer passage (part ${texts.length}, characters ${start}:${end}): ${JSON.stringify(passage)}`
+          );
+        }
       }
     }
   }
@@ -79,7 +101,7 @@ function renderResearch(payload: unknown): string {
   if (!text) throw new Error('Parallel returned an empty research response.');
   if (sources.size === 0) return text;
 
-  const list = [...sources].map(([url, title], index) => {
+  const list = [...sources].map(([url, { title, passages }], index) => {
     const label = title
       .replaceAll('\\', '\\\\')
       .replaceAll('[', '\\[')
@@ -89,9 +111,15 @@ function renderResearch(payload: unknown): string {
       .replaceAll('\\', '%5C')
       .replaceAll('<', '%3C')
       .replaceAll('>', '%3E');
-    return `${index + 1}. [${label}](<${href}>)`;
+    const link = `${index + 1}. [${label}](<${href}>)`;
+    return [link, ...[...passages].map((passage) => `   ${passage}`)].join(
+      '\n'
+    );
   });
-  return `${text}\n\nSources:\n${list.join('\n')}`;
+  const rangeNote = [...sources.values()].some((source) => source.passages.size)
+    ? 'Passage locations use zero-based Unicode character offsets within each original text part; the end is exclusive.\n'
+    : '';
+  return `${text}\n\nSources:\n${rangeNote}${list.join('\n')}`;
 }
 
 function safeError(error: unknown, apiKey: string): Error {
@@ -126,7 +154,7 @@ export function parseResearchInput(input: unknown): Required<ResearchInput> {
     throw new Error('Parallel Research effort must be low, medium, or high.');
   }
   if (
-    [...input.query].length + [...RESEARCH_INSTRUCTIONS].length >
+    [...`${RESEARCH_INSTRUCTIONS}\n${input.query}`].length >
     PARALLEL_RESPONSES_MAX_INPUT_CHARS
   ) {
     throw new Error(
