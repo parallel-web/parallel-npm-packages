@@ -148,7 +148,7 @@ describe('Parallel plugin registration', () => {
     expect(search).toHaveBeenCalledOnce();
   });
 
-  it('lets an explicit empty key choose anonymous search over an environment key', async () => {
+  it('lets an explicit empty key choose free search over an environment key', async () => {
     const search = mockSearch();
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
