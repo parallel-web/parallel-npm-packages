@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFile, rm, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { validateToolArguments } from '@earendil-works/pi-ai';
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -32,7 +33,8 @@ vi.mock('../parallel-client.js', () => ({
   isParallelAuthenticationError: mocks.isParallelAuthenticationError,
 }));
 
-vi.mock('../parallel-responses.js', () => ({
+vi.mock('../parallel-responses.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../parallel-responses.js')>()),
   runParallelResearch: mocks.runParallelResearch,
 }));
 
@@ -528,6 +530,41 @@ describe('@parallel-web/pi-extension', () => {
       undefined
     );
   });
+  it.each([null, 0, false])(
+    'web_research rejects a %j query before Pi can coerce it to a string',
+    async (query) => {
+      mocks.getParallelApiKey.mockResolvedValue('stored-api-key');
+      mocks.runParallelResearch.mockResolvedValue({
+        text: 'This request should not have been sent.',
+        effort: 'medium',
+      });
+      const extension = (await import('../index.js')).default;
+      const pi = createMockPi();
+      extension(pi as unknown as ExtensionAPI);
+      const tool = getRegisteredTool(pi, 'web_research');
+
+      const execute = async () => {
+        const args = tool.prepareArguments?.({ query }) ?? { query };
+        const params = validateToolArguments(tool, {
+          type: 'toolCall',
+          id: 'research-invalid',
+          name: 'web_research',
+          arguments: args,
+        });
+        return await tool.execute(
+          'research-invalid',
+          params,
+          undefined,
+          undefined,
+          createToolContext()
+        );
+      };
+
+      await expect(execute()).rejects.toThrow('non-empty question');
+      expect(mocks.runParallelResearch).not.toHaveBeenCalled();
+    }
+  );
+
   it('web_research uses shared auth and sends only explicit arguments with cancellation', async () => {
     mocks.getParallelApiKey.mockResolvedValue('stored-api-key');
     mocks.runParallelResearch.mockResolvedValue({

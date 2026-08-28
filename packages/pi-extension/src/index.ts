@@ -13,7 +13,7 @@ import {
   truncateHead,
 } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
-import { runParallelResearch } from './parallel-responses';
+import { parseResearchInput, runParallelResearch } from './parallel-responses';
 import {
   getParallelApiKey,
   getParallelAuthStatus,
@@ -188,6 +188,8 @@ export default function (pi: ExtensionAPI) {
         )
       ),
     }),
+    // Reject invalid raw values before Pi coerces them to schema types.
+    prepareArguments: parseResearchInput,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       onUpdate?.({
         content: [{ type: 'text', text: 'Researching the web...' }],

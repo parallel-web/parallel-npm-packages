@@ -32,20 +32,23 @@ function renderResearch(payload: unknown): string {
   const texts: string[] = [];
   const sources = new Map<string, string>();
   for (const item of payload.output) {
-    if (
-      !isRecord(item) ||
-      item.type !== 'message' ||
-      !Array.isArray(item.content)
-    ) {
-      continue;
+    if (!isRecord(item) || typeof item.type !== 'string') {
+      throw new Error('Parallel returned malformed research output.');
+    }
+    if (item.type !== 'message') continue;
+    if (item.status !== undefined && item.status !== 'completed') {
+      throw new Error('Parallel returned an answer that was not completed.');
+    }
+    if (!Array.isArray(item.content)) {
+      throw new Error('Parallel returned malformed research output.');
     }
     for (const content of item.content) {
-      if (
-        !isRecord(content) ||
-        content.type !== 'output_text' ||
-        typeof content.text !== 'string'
-      ) {
-        continue;
+      if (!isRecord(content) || typeof content.type !== 'string') {
+        throw new Error('Parallel returned malformed research output.');
+      }
+      if (content.type !== 'output_text') continue;
+      if (typeof content.text !== 'string') {
+        throw new Error('Parallel returned malformed research output.');
       }
       texts.push(content.text);
       if (!Array.isArray(content.annotations)) continue;
@@ -106,16 +109,17 @@ function safeError(error: unknown, apiKey: string): Error {
   return result;
 }
 
-export async function runParallelResearch(
-  apiKey: string,
-  input: ResearchInput,
-  signal?: AbortSignal
-): Promise<{ text: string; effort: ResearchEffort }> {
-  if (typeof input.query !== 'string' || !input.query.trim()) {
+export function parseResearchInput(input: unknown): Required<ResearchInput> {
+  if (
+    !isRecord(input) ||
+    typeof input.query !== 'string' ||
+    !input.query.trim()
+  ) {
     throw new Error('Parallel Research requires a non-empty question.');
   }
-  const effort = input.effort ?? DEFAULT_RESEARCH_EFFORT;
-  if (!['low', 'medium', 'high'].includes(effort)) {
+  const effort =
+    input.effort === undefined ? DEFAULT_RESEARCH_EFFORT : input.effort;
+  if (effort !== 'low' && effort !== 'medium' && effort !== 'high') {
     throw new Error('Parallel Research effort must be low, medium, or high.');
   }
   if (
@@ -126,6 +130,15 @@ export async function runParallelResearch(
       'Parallel Research exceeds the 20,000-character input limit, including research instructions.'
     );
   }
+  return { query: input.query, effort };
+}
+
+export async function runParallelResearch(
+  apiKey: string,
+  input: ResearchInput,
+  signal?: AbortSignal
+): Promise<{ text: string; effort: ResearchEffort }> {
+  const { query, effort } = parseResearchInput(input);
   if (!apiKey) {
     throw new Error(
       'Parallel authentication required. Run `/login parallel` in Pi, or set PARALLEL_API_KEY.'
@@ -153,7 +166,7 @@ export async function runParallelResearch(
       },
       body: JSON.stringify({
         model: 'parallel',
-        input: input.query,
+        input: query,
         instructions: RESEARCH_INSTRUCTIONS,
         reasoning: { effort },
         stream: false,

@@ -109,6 +109,7 @@ describe('Parallel research request', () => {
     [{ query: ' \n\t' }, 'non-empty question'],
     [{ query: null }, 'non-empty question'],
     [{ query, effort: 'extreme' }, 'effort must be'],
+    [{ query, effort: null }, 'effort must be'],
     [
       { query: 'x'.repeat(PARALLEL_RESPONSES_MAX_INPUT_CHARS) },
       '20,000-character',
@@ -169,7 +170,10 @@ describe('Parallel research evidence', () => {
         { type: 'output_text', text: 'Second finding.', annotations: [] },
       ],
     });
-    mockResponse(payload);
+    mockResponse({
+      ...payload,
+      output: [{ type: 'reasoning', summary: [] }, ...payload.output],
+    });
     const { text } = await runParallelResearch(apiKey, { query });
     expect(text).toContain('First finding.\n\nSecond finding.');
     expect(text).toContain('[A \\[label\\] next](<https://example.com/a(b)>)');
@@ -199,6 +203,43 @@ describe('Parallel research evidence', () => {
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it.each(['in_progress', 'incomplete'])(
+    'rejects an answer message marked %s even when the response is completed',
+    async (status) => {
+      const payload = completed('Partial answer.');
+      Object.assign(payload.output[0], { status });
+      const fetchMock = mockResponse(payload);
+      await expect(runParallelResearch(apiKey, { query })).rejects.toThrow(
+        'not completed'
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it.each([
+    null,
+    {},
+    { type: 'message', content: null },
+    { type: 'message', content: [null] },
+    {
+      type: 'message',
+      content: [{ type: 'output_text', text: 42 }],
+    },
+  ])(
+    'rejects malformed answer parts instead of returning partial text: %j',
+    async (item) => {
+      const payload = completed('Only the first part of the answer.');
+      const fetchMock = mockResponse({
+        ...payload,
+        output: [...payload.output, item],
+      });
+      await expect(runParallelResearch(apiKey, { query })).rejects.toThrow(
+        'malformed research output'
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  );
 });
 
 describe('Parallel research failure lifecycle', () => {
