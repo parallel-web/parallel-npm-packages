@@ -141,7 +141,7 @@ describe('Parallel response mapping', () => {
   });
 });
 
-describe('anonymous Parallel MCP search', () => {
+describe('free Parallel MCP search', () => {
   it.each([
     { maxCharsTotal: 4, snippets: ['abcd', undefined] },
     { maxCharsTotal: 9, maxCharsPerResult: 6, snippets: ['abcd\n\n', 'ijk'] },
