@@ -97,14 +97,15 @@ export default function (pi: ExtensionAPI) {
 
   async function runWithAuth<T>(
     ctx: ExtensionContext,
-    request: (apiKey: string) => Promise<T>
+    request: (apiKey: string) => Promise<T>,
+    isAuthenticationError = isParallelAuthenticationError
   ) {
     const apiKey = await resolveApiKey(ctx);
 
     try {
       return await request(apiKey);
     } catch (error) {
-      if (!isParallelAuthenticationError(error)) {
+      if (!isAuthenticationError(error)) {
         throw error;
       }
 
@@ -208,18 +209,24 @@ export default function (pi: ExtensionAPI) {
         content: [{ type: 'text', text: 'Researching the web...' }],
         details: { provider: 'parallel', product: 'responses' },
       });
-      const result = await runWithAuth(ctx, (apiKey) =>
-        runParallelResearch(
-          apiKey,
-          {
-            query: params.query,
-            effort: params.effort,
-            ...(params.previous_response_id !== undefined
-              ? { previous_response_id: params.previous_response_id }
-              : {}),
-          },
-          signal
-        )
+      const result = await runWithAuth(
+        ctx,
+        (apiKey) =>
+          runParallelResearch(
+            apiKey,
+            {
+              query: params.query,
+              effort: params.effort,
+              ...(params.previous_response_id !== undefined
+                ? { previous_response_id: params.previous_response_id }
+                : {}),
+            },
+            signal
+          ),
+        // Responses errors carry HTTP status. Their text can echo opaque IDs,
+        // so words such as "unauthorized" do not identify rejected credentials.
+        (error) =>
+          error instanceof Error && 'status' in error && error.status === 401
       );
       // Pi sends content to the parent, not details. Keep the ID ahead of the
       // answer so a truncated preview still supports an explicit follow-up.

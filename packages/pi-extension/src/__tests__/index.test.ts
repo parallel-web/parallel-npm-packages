@@ -737,6 +737,76 @@ describe('@parallel-web/pi-extension', () => {
     }
   );
 
+  it.each([
+    [404, 'Interaction context not found: resp_unauthorized'],
+    [404, 'Invalid interaction id: authentication'],
+    [400, 'Continuation unavailable: authentication policy restriction'],
+    [429, 'Rate limit exceeded for this API key'],
+    [500, 'Authentication service unavailable'],
+    [undefined, 'Authentication service connection failed'],
+  ])(
+    'web_research preserves non-authentication errors with status %s',
+    async (status, message) => {
+      const { isParallelAuthenticationError } = await vi.importActual<
+        typeof import('../parallel-client.js')
+      >('../parallel-client.js');
+      mocks.isParallelAuthenticationError.mockImplementation(
+        isParallelAuthenticationError
+      );
+      mocks.getParallelApiKey.mockResolvedValue('stored-api-key');
+      const error = Object.assign(new Error(String(message)), { status });
+      mocks.runParallelResearch.mockRejectedValue(error);
+      const pi = createMockPi();
+      (await import('../index.js')).default(pi as unknown as ExtensionAPI);
+
+      await expect(
+        getRegisteredTool(pi, 'web_research').execute(
+          'research-error',
+          { query: 'A follow-up', previous_response_id: 'resp_unauthorized' },
+          undefined,
+          undefined,
+          createToolContext()
+        )
+      ).rejects.toBe(error);
+      expect(mocks.runParallelResearch).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it.each(['stored', 'environment'])(
+    'web_research keeps HTTP 401 guidance for %s credentials',
+    async (source) => {
+      const { isParallelAuthenticationError } = await vi.importActual<
+        typeof import('../parallel-client.js')
+      >('../parallel-client.js');
+      mocks.isParallelAuthenticationError.mockImplementation(
+        isParallelAuthenticationError
+      );
+      if (source === 'environment')
+        process.env.PARALLEL_API_KEY = 'rejected-key';
+      mocks.getParallelApiKey.mockResolvedValue('rejected-key');
+      mocks.runParallelResearch.mockRejectedValue(
+        Object.assign(new Error('Rejected'), { status: 401 })
+      );
+      const pi = createMockPi();
+      (await import('../index.js')).default(pi as unknown as ExtensionAPI);
+
+      await expect(
+        getRegisteredTool(pi, 'web_research').execute(
+          'research-auth',
+          { query: 'Research question' },
+          undefined,
+          undefined,
+          createToolContext()
+        )
+      ).rejects.toThrow(
+        source === 'environment'
+          ? 'rejected PARALLEL_API_KEY'
+          : 'rejected the stored credential'
+      );
+      expect(mocks.runParallelResearch).toHaveBeenCalledTimes(1);
+    }
+  );
+
   it('web_research reuses the existing missing-credential guidance', async () => {
     mocks.getParallelApiKey.mockResolvedValue(undefined);
     const extension = (await import('../index.js')).default;
