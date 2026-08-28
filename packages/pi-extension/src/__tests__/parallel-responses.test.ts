@@ -192,6 +192,16 @@ describe('Parallel research evidence', () => {
   });
 
   it.each([
+    ['https://example.com/?q=\\[tag]', 'https://example.com/?q=%5C[tag]'],
+    ['https://example.com/#trail\\', 'https://example.com/#trail%5C'],
+  ])('preserves literal backslashes in source URLs: %s', async (url, href) => {
+    mockResponse(completed('Answer.', [{ type: 'url_citation', url }]));
+    expect((await runParallelResearch(apiKey, { query })).text).toContain(
+      `](<${href}>)`
+    );
+  });
+
+  it.each([
     [{ status: 'in_progress', output: [] }, 'not completed'],
     [{ status: 'completed' }, 'without output messages'],
     [{ status: 'completed', output: [] }, 'empty research response'],
@@ -275,6 +285,17 @@ describe('Parallel research failure lifecycle', () => {
     const fetchMock = vi.fn(async () => new Response('not JSON'));
     vi.stubGlobal('fetch', fetchMock);
     await expect(runParallelResearch(apiKey, { query })).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not expose response excerpts through JSON parse errors', async () => {
+    const secret = 'fixture-secret-key-0123456789abcdefghijklmnopqrstuvwxyz';
+    const fetchMock = vi.fn(async () => new Response(secret));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(runParallelResearch(secret, { query })).rejects.toThrow(
+      'Parallel returned malformed research JSON.'
+    );
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

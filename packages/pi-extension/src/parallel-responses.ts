@@ -85,7 +85,10 @@ function renderResearch(payload: unknown): string {
       .replaceAll('[', '\\[')
       .replaceAll(']', '\\]')
       .replace(/[\r\n]+/g, ' ');
-    const href = url.replaceAll('<', '%3C').replaceAll('>', '%3E');
+    const href = url
+      .replaceAll('\\', '%5C')
+      .replaceAll('<', '%3C')
+      .replaceAll('>', '%3E');
     return `${index + 1}. [${label}](<${href}>)`;
   });
   return `${text}\n\nSources:\n${list.join('\n')}`;
@@ -205,6 +208,9 @@ export async function runParallelResearch(
     if (signal?.aborted) throw new Error('Parallel Research cancelled.');
     if (deadline.signal.aborted)
       throw new Error('Parallel Research timed out after 120 seconds.');
+    // JSON parser errors can include body excerpts, even partial credentials.
+    if (error instanceof SyntaxError)
+      throw new Error('Parallel returned malformed research JSON.');
     throw safeError(error, apiKey);
   } finally {
     clearTimeout(timeout);
