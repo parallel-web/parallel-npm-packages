@@ -97,8 +97,9 @@ function renderResearch(payload: unknown): string {
     }
   }
 
-  const text = texts.join('\n\n').trim();
-  if (!text) throw new Error('Parallel returned an empty research response.');
+  const text = texts.join('\n\n');
+  if (!text.trim())
+    throw new Error('Parallel returned an empty research response.');
   if (sources.size === 0) return text;
 
   const list = [...sources].map(([url, { title, passages }], index) => {

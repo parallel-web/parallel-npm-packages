@@ -153,6 +153,16 @@ describe('Parallel research request', () => {
 });
 
 describe('Parallel research evidence', () => {
+  it.each([
+    '    const answer = 42;\n    console.log(answer);\n',
+    '\tconst answer = "🔎";\r\n',
+    '\n\nA researched answer.\n\n',
+    'A researched answer.  ',
+  ])('preserves answer whitespace without citations: %j', async (answer) => {
+    mockResponse(completed(answer, []));
+    expect((await runParallelResearch(apiKey, { query })).text).toBe(answer);
+  });
+
   it('preserves the cited passages for each source using Unicode character ranges', async () => {
     const first = 'Alpha shipped in 2024.';
     const second = 'Beta shipped in 2025.';
@@ -227,10 +237,10 @@ describe('Parallel research evidence', () => {
   });
 
   it('resolves each passage against its original text part without editing Markdown', async () => {
-    const first = '  🔎 A [link](https://example.com/path).\n';
+    const first = '    🔎 A [link](https://example.com/path).\n';
     const second = 'Code:\n\n~~~js\nconst value = "🔎";\n~~~\n';
     const passage = 'const value = "🔎";';
-    const firstStart = [...'  🔎 '].length;
+    const firstStart = [...'    🔎 '].length;
     const secondStart = [...'Code:\n\n~~~js\n'].length;
     const payload = completed(first, [
       {
@@ -254,10 +264,8 @@ describe('Parallel research evidence', () => {
     });
     mockResponse(payload);
     const { text } = await runParallelResearch(apiKey, { query });
-    expect(text.split('\n\nSources:\n')[0]).toBe(
-      [first, second].join('\n\n').trim()
-    );
-    expect(text).toContain('part 1, characters 4:');
+    expect(text.split('\n\nSources:\n')[0]).toBe([first, second].join('\n\n'));
+    expect(text).toContain('part 1, characters 6:');
     expect(text).toContain('part 2, characters 13:');
     expect(text).toContain(JSON.stringify(passage));
     expect(text).toContain(
