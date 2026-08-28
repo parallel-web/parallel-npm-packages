@@ -179,7 +179,7 @@ describe('Parallel plugin registration', () => {
     expect(search).not.toHaveBeenCalled();
   });
 
-  it('uses anonymous MCP search when no API key is configured', async () => {
+  it('uses free MCP search when no API key is configured', async () => {
     const search = mockSearch();
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
@@ -191,7 +191,7 @@ describe('Parallel plugin registration', () => {
               results: [
                 {
                   url: 'https://example.test',
-                  excerpts: ['Anonymous search works'],
+                  excerpts: ['Free search works'],
                 },
               ],
             },
@@ -207,7 +207,7 @@ describe('Parallel plugin registration', () => {
       sources: [
         {
           url: 'https://example.test',
-          snippet: 'Anonymous search works',
+          snippet: 'Free search works',
         },
       ],
       truncated: false,

@@ -187,7 +187,7 @@ describe('free Parallel MCP search', () => {
     }
   );
 
-  it('searches without credentials and reuses one anonymous session', async () => {
+  it('searches without credentials and reuses one session across free searches', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(
       async () =>
         new Response(
@@ -262,7 +262,7 @@ describe('free Parallel MCP search', () => {
     expect(clientFactory).not.toHaveBeenCalled();
   });
 
-  it('maps anonymous HTTP failures to WEB_PROVIDER_ERROR', async () => {
+  it('maps free MCP HTTP failures to WEB_PROVIDER_ERROR', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('rate limited', { status: 429 })
     );
@@ -277,7 +277,7 @@ describe('free Parallel MCP search', () => {
     });
   });
 
-  it('maps anonymous JSON-RPC failures to WEB_PROVIDER_ERROR', async () => {
+  it('maps free MCP JSON-RPC failures to WEB_PROVIDER_ERROR', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -298,7 +298,7 @@ describe('free Parallel MCP search', () => {
     });
   });
 
-  it('maps anonymous caller aborts to WEB_ABORTED', async () => {
+  it('maps free MCP caller aborts to WEB_ABORTED', async () => {
     const controller = new AbortController();
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
       controller.abort();

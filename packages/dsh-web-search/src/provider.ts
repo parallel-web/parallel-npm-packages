@@ -74,7 +74,7 @@ export class ParallelSearchProvider implements WebSearchProvider {
     try {
       payload =
         this.options.apiKey.length === 0
-          ? await this.searchAnonymously(request, signal)
+          ? await this.searchFreeMcp(request, signal)
           : await this.getClient().search(
               {
                 ...buildSearchBody(request, this.options),
@@ -115,7 +115,7 @@ export class ParallelSearchProvider implements WebSearchProvider {
     return (this.client ??= this.createClient(this.options.apiKey));
   }
 
-  private async searchAnonymously(
+  private async searchFreeMcp(
     request: WebSearchRequest,
     signal?: AbortSignal
   ): Promise<unknown> {
