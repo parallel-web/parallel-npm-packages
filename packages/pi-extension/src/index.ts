@@ -13,7 +13,11 @@ import {
   truncateHead,
 } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
-import { parseResearchInput, runParallelResearch } from './parallel-responses';
+import {
+  MAX_RESPONSE_ID_LENGTH,
+  parseResearchInput,
+  runParallelResearch,
+} from './parallel-responses';
 import {
   getParallelApiKey,
   getParallelAuthStatus,
@@ -68,7 +72,7 @@ function suppressSkillsFromPrompt(systemPrompt: string) {
 
 const WEB_TOOL_GUIDANCE = {
   web_research:
-    'Use web_research for a complete answer that requires current web research and synthesis. Pass the full self-contained question, including constraints, in one call; make focused follow-ups only for unresolved parts.',
+    'Use web_research for a complete answer that requires current web research and synthesis. Start with the full self-contained question, including constraints. For a focused follow-up, pass the latest returned Response ID as previous_response_id; omit it for unrelated research.',
   web_search:
     'Use web_search for source discovery and raw excerpts when you need to investigate sources yourself.',
   web_fetch:
@@ -169,14 +173,15 @@ export default function (pi: ExtensionAPI) {
       'Get a cited answer to a complete web research question using Parallel',
     promptGuidelines: [
       'Use web_research for questions that need web research and synthesis; pass the complete question in one call before making focused follow-ups.',
-      'Include dates, constraints, and relevant context in query. Research cannot see this conversation or local files; include only context that is safe to send.',
+      'Include dates, constraints, and relevant context in query. Research cannot see this Pi conversation or local files; include only context that is safe to send.',
+      'For a follow-up on the same investigation, pass its latest returned Response ID as previous_response_id to reuse prior research context. Omit it for unrelated questions. If no ID was returned, continuation is unavailable.',
       'Use low effort for focused lookups, medium for general research, and high only for extensive research. The default is medium.',
     ],
     parameters: Type.Object({
       query: Type.String({
         minLength: 1,
         description:
-          'The complete, self-contained research question, including all dates, constraints, and relevant context that is safe to send. Research has no access to the conversation or local files.',
+          'The research question and constraints that are safe to send. Make a new question self-contained; a follow-up with previous_response_id may refer to prior research. Research cannot see the Pi conversation or local files.',
       }),
       effort: Type.Optional(
         Type.Union(
@@ -186,6 +191,14 @@ export default function (pi: ExtensionAPI) {
               'Research depth: low for focused lookups, medium for general research (default), high for extensive research.',
           }
         )
+      ),
+      previous_response_id: Type.Optional(
+        Type.String({
+          minLength: 1,
+          maxLength: MAX_RESPONSE_ID_LENGTH,
+          description:
+            'The latest Response ID returned by web_research for this investigation. Reuses prior research context for a follow-up. Omit for a new or unrelated question; never invent an ID.',
+        })
       ),
     }),
     // Reject invalid raw values before Pi coerces them to schema types.
@@ -198,11 +211,22 @@ export default function (pi: ExtensionAPI) {
       const result = await runWithAuth(ctx, (apiKey) =>
         runParallelResearch(
           apiKey,
-          { query: params.query, effort: params.effort },
+          {
+            query: params.query,
+            effort: params.effort,
+            ...(params.previous_response_id !== undefined
+              ? { previous_response_id: params.previous_response_id }
+              : {}),
+          },
           signal
         )
       );
-      const preview = truncateHead(result.text, {
+      // Pi sends content to the parent, not details. Keep the ID ahead of the
+      // answer so a truncated preview still supports an explicit follow-up.
+      const report = result.responseId
+        ? `Response ID: ${result.responseId}\n\n${result.text}`
+        : result.text;
+      const preview = truncateHead(report, {
         maxLines: DEFAULT_MAX_LINES,
         maxBytes: DEFAULT_MAX_BYTES,
       });
@@ -213,10 +237,10 @@ export default function (pi: ExtensionAPI) {
         // limit requires a preview. Normal research results create no file.
         const directory = await mkdtemp(join(tmpdir(), 'parallel-research-'));
         outputFile = join(directory, 'research.md');
-        await writeFile(outputFile, result.text, { mode: 0o600 });
+        await writeFile(outputFile, report, { mode: 0o600 });
         const notice = `\n\n[Research output truncated. Full answer and sources: ${outputFile}]`;
         text =
-          truncateHead(result.text, {
+          truncateHead(report, {
             maxLines: DEFAULT_MAX_LINES - 2,
             maxBytes: DEFAULT_MAX_BYTES - Buffer.byteLength(notice),
           }).content + notice;
@@ -227,6 +251,7 @@ export default function (pi: ExtensionAPI) {
           provider: 'parallel',
           product: 'responses',
           effort: result.effort,
+          ...(result.responseId ? { responseId: result.responseId } : {}),
           ...(outputFile ? { outputFile } : {}),
         },
       };

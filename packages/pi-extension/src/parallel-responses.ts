@@ -4,21 +4,35 @@ export const PARALLEL_RESPONSES_URL = 'https://api.parallel.ai/v1/responses';
 export const PARALLEL_RESPONSES_MAX_INPUT_CHARS = 20_000;
 export const PARALLEL_RESPONSES_TIMEOUT_MS = 120_000;
 export const DEFAULT_RESEARCH_EFFORT = 'medium';
+export const MAX_RESPONSE_ID_LENGTH = 512;
 
 export type ResearchEffort = 'low' | 'medium' | 'high';
 
 export interface ResearchInput {
   query: string;
   effort?: ResearchEffort;
+  previous_response_id?: string;
 }
 
-// Only these instructions and the explicit question cross the research boundary.
+// Only these instructions, the explicit question and optional continuation ID
+// cross the research boundary.
 // Do not assemble this prompt from Pi's session, system prompt, or local files.
 const RESEARCH_INSTRUCTIONS =
   "Research the user's question using current web sources. Return a direct, evidence-based answer with citations. State uncertainty when the sources do not support a conclusion.";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// IDs are opaque. Bound their size and keep the displayed continuation header
+// on one line without coupling the tool to the server's current ID format.
+function isResponseId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= MAX_RESPONSE_ID_LENGTH &&
+    !/[\s\p{Cc}]/u.test(value)
+  );
 }
 
 function renderResearch(payload: unknown): string {
@@ -141,7 +155,9 @@ function safeError(error: unknown, apiKey: string): Error {
   return result;
 }
 
-export function parseResearchInput(input: unknown): Required<ResearchInput> {
+export function parseResearchInput(
+  input: unknown
+): ResearchInput & { effort: ResearchEffort } {
   if (
     !isRecord(input) ||
     typeof input.query !== 'string' ||
@@ -162,15 +178,27 @@ export function parseResearchInput(input: unknown): Required<ResearchInput> {
       'Parallel Research exceeds the 20,000-character input limit, including research instructions.'
     );
   }
-  return { query: input.query, effort };
+  const previousResponseId = input.previous_response_id;
+  if (previousResponseId !== undefined && !isResponseId(previousResponseId)) {
+    throw new Error(
+      `Parallel Research previous_response_id must be a non-empty string of at most ${MAX_RESPONSE_ID_LENGTH} characters without whitespace or control characters.`
+    );
+  }
+  return {
+    query: input.query,
+    effort,
+    ...(previousResponseId !== undefined
+      ? { previous_response_id: previousResponseId }
+      : {}),
+  };
 }
 
 export async function runParallelResearch(
   apiKey: string,
   input: ResearchInput,
   signal?: AbortSignal
-): Promise<{ text: string; effort: ResearchEffort }> {
-  const { query, effort } = parseResearchInput(input);
+): Promise<{ text: string; effort: ResearchEffort; responseId?: string }> {
+  const { query, effort, previous_response_id } = parseResearchInput(input);
   if (!apiKey) {
     throw new Error(
       'Parallel authentication required. Run `/login parallel` in Pi, or set PARALLEL_API_KEY.'
@@ -202,6 +230,7 @@ export async function runParallelResearch(
         instructions: RESEARCH_INSTRUCTIONS,
         reasoning: { effort },
         stream: false,
+        ...(previous_response_id !== undefined ? { previous_response_id } : {}),
       }),
       signal: requestSignal,
       redirect: 'error',
@@ -232,7 +261,13 @@ export async function runParallelResearch(
 
     const payload: unknown = await response.json();
     requestSignal.throwIfAborted();
-    return { text: renderResearch(payload), effort };
+    return {
+      text: renderResearch(payload),
+      effort,
+      ...(isRecord(payload) && isResponseId(payload.id)
+        ? { responseId: payload.id }
+        : {}),
+    };
   } catch (error) {
     if (signal?.aborted) throw new Error('Parallel Research cancelled.');
     if (deadline.signal.aborted)

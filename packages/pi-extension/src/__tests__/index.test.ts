@@ -565,6 +565,83 @@ describe('@parallel-web/pi-extension', () => {
     }
   );
 
+  it.each([null, 42, false, {}, [], '', ' ', 'resp_\n', 'x'.repeat(513)])(
+    'web_research rejects raw invalid continuation IDs before Pi coercion: %j',
+    async (previous_response_id) => {
+      const extension = (await import('../index.js')).default;
+      const pi = createMockPi();
+      extension(pi as unknown as ExtensionAPI);
+      const tool = getRegisteredTool(pi, 'web_research');
+      expect(() => {
+        const args = tool.prepareArguments({
+          query: 'A follow-up',
+          previous_response_id,
+        });
+        validateToolArguments(tool, {
+          type: 'toolCall',
+          id: 'invalid-followup',
+          name: 'web_research',
+          arguments: args,
+        });
+      }).toThrow('previous_response_id');
+      expect(mocks.getParallelApiKey).not.toHaveBeenCalled();
+      expect(mocks.runParallelResearch).not.toHaveBeenCalled();
+    }
+  );
+
+  it('web_research exposes continuation IDs to the parent and forwards only the explicit ID', async () => {
+    mocks.getParallelApiKey.mockResolvedValue('stored-api-key');
+    const answer = '    const answer = 42;\n\n[source](https://example.com)\n';
+    mocks.runParallelResearch.mockResolvedValue({
+      text: answer,
+      effort: 'medium',
+      responseId: 'resp_next',
+    });
+    const extension = (await import('../index.js')).default;
+    const pi = createMockPi();
+    extension(pi as unknown as ExtensionAPI);
+    const tool = getRegisteredTool(pi, 'web_research');
+    expect(tool.parameters.required).not.toContain('previous_response_id');
+    expect(tool.parameters.properties.previous_response_id).toMatchObject({
+      type: 'string',
+      maxLength: 512,
+    });
+    expect(tool.promptGuidelines.join(' ')).toContain('previous_response_id');
+    const args = tool.prepareArguments({
+      query: 'A focused follow-up',
+      previous_response_id: 'resp_prior',
+      history: 'private-history',
+    });
+    const params = validateToolArguments(tool, {
+      type: 'toolCall',
+      id: 'followup',
+      name: 'web_research',
+      arguments: args,
+    });
+    const signal = new AbortController().signal;
+    const result = await tool.execute(
+      'followup',
+      params,
+      signal,
+      undefined,
+      createToolContext()
+    );
+    expect(mocks.runParallelResearch).toHaveBeenCalledWith(
+      'stored-api-key',
+      {
+        query: 'A focused follow-up',
+        effort: 'medium',
+        previous_response_id: 'resp_prior',
+      },
+      signal
+    );
+    expect(result.content).toEqual([
+      { type: 'text', text: `Response ID: resp_next\n\n${answer}` },
+    ]);
+    expect(result.details.responseId).toBe('resp_next');
+    expect(result.details.outputFile).toBeUndefined();
+  });
+
   it('web_research uses shared auth and sends only explicit arguments with cancellation', async () => {
     mocks.getParallelApiKey.mockResolvedValue('stored-api-key');
     mocks.runParallelResearch.mockResolvedValue({
@@ -618,9 +695,11 @@ describe('@parallel-web/pi-extension', () => {
           ? 'finding\n'.repeat(5_000)
           : '界'.repeat(DEFAULT_MAX_BYTES)) +
         '\nSources:\n[Final source](https://example.com/end)';
+      const fullReport = `Response ID: resp_long\n\n${fullText}`;
       mocks.runParallelResearch.mockResolvedValue({
         text: fullText,
         effort: 'medium',
+        responseId: 'resp_long',
       });
       const extension = (await import('../index.js')).default;
       const pi = createMockPi();
@@ -636,6 +715,10 @@ describe('@parallel-web/pi-extension', () => {
       );
       const outputFile = result.details.outputFile;
       try {
+        expect(
+          result.content[0].text.startsWith('Response ID: resp_long\n\n')
+        ).toBe(true);
+        expect(result.details.responseId).toBe('resp_long');
         expect(result.content[0].text).toContain('Research output truncated');
         expect(result.content[0].text).toContain(outputFile);
         expect(result.content[0].text.length).toBeLessThan(fullText.length);
@@ -645,7 +728,7 @@ describe('@parallel-web/pi-extension', () => {
         expect(result.content[0].text.split('\n').length).toBeLessThanOrEqual(
           DEFAULT_MAX_LINES
         );
-        expect(await readFile(outputFile, 'utf8')).toBe(fullText);
+        expect(await readFile(outputFile, 'utf8')).toBe(fullReport);
         expect((await stat(outputFile)).mode & 0o077).toBe(0);
       } finally {
         if (outputFile)

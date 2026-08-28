@@ -54,11 +54,33 @@ web_research({
 | `web_search` | Discovering sources and raw excerpts to investigate yourself |
 | `web_fetch` | Reading known URLs or checking original sources |
 
-`query` must be a complete, self-contained question. Research does not see the
+Start with a complete, self-contained `query`. Research does not see the Pi
 conversation or local files, so include relevant constraints and only context
-that is safe to send. Start with the full question in one call. For focused
-follow-ups, restate the relevant constraints and findings because earlier
-research calls are not automatically included.
+that is safe to send.
+
+When available, the result starts with a `Response ID`. For a focused follow-up
+on the same investigation, pass that ID as `previous_response_id`:
+
+```javascript
+web_research({
+  query: "Which of those compatibility gaps would matter for an API server that uses native Node.js addons?",
+  previous_response_id: "resp_..." // Copy the actual ID from the previous result.
+});
+```
+
+Use the new ID returned by each follow-up to continue from its answer. Omit the
+ID for a new or unrelated question. Calls never chain automatically, and the
+extension keeps no local research-session state. Continuation reuses saved
+research context, including earlier answer summaries, not every internal step
+of the research process. IDs are opaque; the tool accepts non-empty IDs up to
+512 characters without whitespace or control characters.
+
+Saved context is not guaranteed to remain available, and continuation is not
+supported for zero data retention (ZDR) accounts. An unavailable ID or a ZDR
+restriction returns an error without retrying as fresh research. A valid
+answer without a usable new ID is still returned, but cannot be continued
+through that result. If Pi loses an ID during conversation compaction, do not
+invent a replacement.
 
 `effort` is optional and defaults to `medium`, matching the Responses API
 default. Use `low` for focused lookups, `medium` for general research, and
@@ -66,15 +88,15 @@ default. Use `low` for focused lookups, `medium` for general research, and
 the [current pricing](https://docs.parallel.ai/getting-started/pricing).
 
 Each invocation makes one non-streaming `POST /v1/responses` request, with no
-automatic retries or background jobs. Calls are independent: the tool does
-not pass `previous_response_id` to reuse earlier research. The local deadline
+automatic retries or background jobs. The local deadline
 is 120 seconds, including reading the response; slower valid research can
 exceed this client limit. Cancelling the tool
 aborts the local request on a best-effort basis; it does not confirm that work
 stopped on the server. A manual retry is a new request and may incur a new charge.
 
 The request contains only the fixed research instructions and explicit query,
-with the selected effort. It does not automatically forward parent history,
+with the selected effort and `previous_response_id` only when explicitly
+supplied. It does not automatically forward parent history,
 local files, cwd, environment variables, Pi tools, or session metadata.
 Anything the calling agent includes in `query` is sent to Parallel.
 
@@ -87,7 +109,8 @@ original text part. These are passages from the answer, not excerpts from
 the source page. Unresolved citation ranges keep the source link without
 inventing a passage. Results that exceed Pi's output limits are shown as a
 marked preview with a path to the complete answer and sources in a private
-temporary file.
+temporary file. The response ID stays visible in the preview and is included
+in the complete report.
 
 ## Dogfooding Locally
 

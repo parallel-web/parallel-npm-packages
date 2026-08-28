@@ -152,6 +152,147 @@ describe('Parallel research request', () => {
   });
 });
 
+describe('Parallel research continuation', () => {
+  it('forwards an explicit opaque ID and returns the new response ID', async () => {
+    const fetchMock = mockResponse({ ...completed(), id: 'resp_new' });
+    const result = await runParallelResearch(apiKey, {
+      query: 'Which of those findings applies to our constraints?',
+      previous_response_id: 'opaque.v2:branch-A',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+      model: 'parallel',
+      input: 'Which of those findings applies to our constraints?',
+      instructions: expect.stringContaining('Research the user'),
+      reasoning: { effort: 'medium' },
+      stream: false,
+      previous_response_id: 'opaque.v2:branch-A',
+    });
+    expect(result).toMatchObject({ responseId: 'resp_new', effort: 'medium' });
+    expect(result.text).toContain('https://example.com/source');
+  });
+
+  it('chains only the IDs explicitly supplied and leaves unrelated calls independent', async () => {
+    let count = 0;
+    const fetchMock = vi.fn(
+      async (_url: unknown, _init?: RequestInit) =>
+        new Response(JSON.stringify({ ...completed(), id: `resp_${++count}` }))
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const first = await runParallelResearch(apiKey, { query });
+    const second = await runParallelResearch(apiKey, {
+      query: 'Compare the findings.',
+      previous_response_id: first.responseId,
+    });
+    await runParallelResearch(apiKey, {
+      query: 'Check the second answer.',
+      previous_response_id: second.responseId,
+    });
+    await runParallelResearch(apiKey, {
+      query: 'An unrelated research question.',
+    });
+    const bodies = fetchMock.mock.calls.map(([, init]) =>
+      JSON.parse(String(init?.body))
+    );
+    expect(bodies.map((body) => body.previous_response_id)).toEqual([
+      undefined,
+      'resp_1',
+      'resp_2',
+      undefined,
+    ]);
+    expect(bodies[0]).not.toHaveProperty('previous_response_id');
+    expect(bodies[3]).not.toHaveProperty('previous_response_id');
+  });
+
+  it.each([
+    null,
+    42,
+    false,
+    {},
+    [],
+    '',
+    ' ',
+    'resp one',
+    'resp_\n',
+    'resp_\u0000',
+    'x'.repeat(513),
+  ])(
+    'rejects unusable explicit continuation IDs before dispatch: %j',
+    async (previous_response_id) => {
+      const fetchMock = mockResponse();
+      await expect(
+        runParallelResearch(apiKey, {
+          query,
+          previous_response_id,
+        } as ResearchInput)
+      ).rejects.toThrow('previous_response_id');
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  );
+
+  it('accepts the tool ID length boundary without trimming or rewriting it', async () => {
+    const id = 'x'.repeat(512);
+    const fetchMock = mockResponse({ ...completed(), id });
+    expect(
+      (await runParallelResearch(apiKey, { query, previous_response_id: id }))
+        .responseId
+    ).toBe(id);
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).previous_response_id
+    ).toBe(id);
+  });
+
+  it.each([
+    undefined,
+    null,
+    42,
+    '',
+    'resp one',
+    'resp_\n',
+    'resp_\u0000',
+    'x'.repeat(513),
+  ])(
+    'keeps a valid answer without advertising unusable returned IDs: %j',
+    async (id) => {
+      mockResponse({ ...completed(), id, previous_response_id: 'resp_old' });
+      const result = await runParallelResearch(apiKey, {
+        query,
+        previous_response_id: 'resp_old',
+      });
+      expect(result.text).toContain('The researched answer.');
+      expect(result.text).toContain('https://example.com/source');
+      expect(result).not.toHaveProperty('responseId');
+    }
+  );
+
+  it.each([
+    [404, 'Interaction context not found: resp_missing'],
+    [
+      400,
+      'previous_interaction_id is not supported for zero data retention (ZDR) customers. Interaction context cannot be persisted under ZDR.',
+    ],
+  ])(
+    'preserves continuation HTTP %s without retrying as fresh research',
+    async (status, message) => {
+      const fetchMock = mockResponse({ error: { message } }, Number(status));
+      await expect(
+        runParallelResearch(apiKey, {
+          query,
+          previous_response_id: 'resp_missing',
+        })
+      ).rejects.toMatchObject({
+        status,
+        message: expect.stringContaining(String(message)),
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(
+        JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
+          .previous_response_id
+      ).toBe('resp_missing');
+    }
+  );
+});
+
 describe('Parallel research evidence', () => {
   it.each([
     '    const answer = 42;\n    console.log(answer);\n',
