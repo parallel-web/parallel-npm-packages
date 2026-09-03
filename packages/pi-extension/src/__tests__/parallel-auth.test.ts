@@ -115,9 +115,9 @@ describe('parallel-auth', () => {
     });
   });
 
-  it('runs the browser OAuth flow on login and returns an api_key credential', async () => {
+  it('delegates browser opening to Pi and returns an api_key credential', async () => {
     mocks.runParallelOAuth.mockImplementation(async (options) => {
-      options.onAuthUrl('https://platform.parallel.ai/oauth', true);
+      options.onAuthUrl('https://platform.parallel.ai/oauth', false);
       return { apiKey: 'fresh-key' };
     });
 
@@ -129,6 +129,9 @@ describe('parallel-auth', () => {
       key: 'fresh-key',
     });
 
+    expect(mocks.runParallelOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({ openBrowser: false })
+    );
     expect(interaction.notify).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'auth_url',

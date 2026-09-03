@@ -22,13 +22,12 @@ async function loginToParallel(
   interaction.signal.throwIfAborted();
 
   const { apiKey } = await runParallelOAuth({
-    onAuthUrl: (url, browserOpened) => {
+    openBrowser: false,
+    onAuthUrl: (url) => {
       interaction.notify({
         type: 'auth_url',
         url,
-        instructions: browserOpened
-          ? 'Opening Parallel login in your browser.'
-          : 'Open this URL to sign in to Parallel.',
+        instructions: 'Opening Parallel login in your browser.',
       });
     },
     promptForCallback: async (authUrl) => {

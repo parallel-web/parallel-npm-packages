@@ -95,8 +95,7 @@ async function startCallbackListener() {
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const requestUrl = req.url ?? '/';
-    const address = server.address() as AddressInfo;
-    const callbackUrl = `http://${LOOPBACK_HOST}:${address.port}${requestUrl}`;
+    const callbackUrl = `${callbackOrigin}${requestUrl}`;
     const url = new URL(callbackUrl);
 
     if (url.pathname !== '/callback') {
@@ -130,7 +129,8 @@ async function startCallbackListener() {
   });
 
   const address = server.address() as AddressInfo;
-  const redirectUri = `http://${LOOPBACK_HOST}:${address.port}/callback`;
+  const callbackOrigin = `http://${LOOPBACK_HOST}:${address.port}`;
+  const redirectUri = `${callbackOrigin}/callback`;
 
   return {
     redirectUri,
@@ -147,6 +147,7 @@ async function startCallbackListener() {
     async close() {
       await new Promise<void>((resolve) => {
         server.close(() => resolve());
+        server.closeAllConnections();
       });
     },
   };
