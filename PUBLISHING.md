@@ -1,16 +1,17 @@
 # Publishing Guide
 
-This monorepo tracks five publishable npm packages, each versioned, tagged, and released
-**independently**:
+We version, tag, and release these six packages separately:
 
 - `@parallel-web/ai-sdk-tools` — `packages/ai-sdk-tools`
 - `@parallel-web/dsh-responses-subagent` — `packages/dsh-responses-subagent`
 - `@parallel-web/dsh-web-search` — `packages/dsh-web-search`
 - `@parallel-web/opencode-plugin` — `packages/opencode-plugin`
 - `@parallel-web/pi-extension` — `packages/pi-extension`
+- `@parallel-web/webmcp` — `packages/webmcp`
 
-`@parallel-web/dsh-responses-subagent` has not yet been published. It can be installed only
-from a local tarball until an npm organization owner completes its reviewed first release.
+`@parallel-web/dsh-responses-subagent` and `@parallel-web/webmcp` aren't on npm yet.
+Use a local tarball to try them until an npm organization owner publishes each
+package's reviewed first release.
 
 (`@parallel-web/oauth` in `packages/parallel-oauth` is `private` — it is bundled into the
 OpenCode plugin and Pi extension at build time and is never published.)
@@ -56,18 +57,33 @@ Skipping that upgrade causes a misleading `404 Not Found` on the publish `PUT`.
 
 ### First release of a new package
 
-npm requires a package to exist before its trusted publisher can be configured. Adding a package
-to this repository intentionally does not publish it. An npm organization owner must first publish
-the reviewed bootstrap release manually from a clean, updated `main` checkout:
+npm needs a package to exist before you can set up its trusted publisher. That means
+an npm organization owner needs to publish the reviewed first release manually.
+Merging a new package into this repo won't publish it.
+
+Start from a clean, up-to-date `main` checkout. Set `PACKAGE` to the directory name
+of the package you're publishing, such as `webmcp` or `dsh-responses-subagent`:
 
 ```bash
+PACKAGE=webmcp
+test -z "$(git status --porcelain)"
+git switch main
+git pull --ff-only
 pnpm install --frozen-lockfile
-pnpm --filter @parallel-web/dsh-responses-subagent check
+pnpm exec eslint "packages/$PACKAGE"
+pnpm exec prettier --check "packages/$PACKAGE"
+pnpm --filter "@parallel-web/$PACKAGE" typecheck
+pnpm --filter "@parallel-web/$PACKAGE" test
+pnpm --filter "@parallel-web/$PACKAGE" build
+pnpm --filter "@parallel-web/$PACKAGE" run --if-present lint
+pnpm --filter "@parallel-web/$PACKAGE" run --if-present check:manifest
+pnpm --filter "@parallel-web/$PACKAGE" run --if-present check:package
 BOOTSTRAP_DIR="$(mktemp -d)"
-pnpm --dir packages/dsh-responses-subagent pack --pack-destination "$BOOTSTRAP_DIR"
+pnpm --dir "packages/$PACKAGE" pack --pack-destination "$BOOTSTRAP_DIR"
 BOOTSTRAP_TARBALL="$(find "$BOOTSTRAP_DIR" -name '*.tgz' -print -quit)"
+tar -tf "$BOOTSTRAP_TARBALL"
 npm publish "$BOOTSTRAP_TARBALL" --access public --tag rc
-npm view @parallel-web/dsh-responses-subagent dist-tags --json
+npm view "@parallel-web/$PACKAGE" dist-tags --json
 ```
 
 The npm owner should inspect the tarball listing before the publish and complete npm's 2FA prompt.

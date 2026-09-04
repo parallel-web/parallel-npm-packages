@@ -194,6 +194,8 @@ importers:
         specifier: ^20.0.0
         version: 20.19.21
 
+  packages/webmcp: {}
+
 packages:
 
   '@ai-sdk/gateway@3.0.121':
