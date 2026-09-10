@@ -1,0 +1,52 @@
+{
+  "name": "@parallel-web/webmcp",
+  "version": "0.1.0-rc.0",
+  "description": "Let agents visiting your website search the web and read pages with Parallel through WebMCP",
+  "author": "Parallel Web",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./auto": {
+      "types": "./dist/auto.d.ts",
+      "import": "./dist/auto.js",
+      "default": "./dist/auto.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": [
+    "./dist/auto.js"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "webmcp",
+    "mcp",
+    "web-search",
+    "agents",
+    "parallel"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/parallel-web/parallel-npm-packages.git",
+    "directory": "packages/webmcp"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
