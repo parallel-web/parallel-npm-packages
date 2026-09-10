@@ -84,6 +84,34 @@ jobs:
       - name: Build packages
         run: pnpm build
 
+  langchain-compatibility:
+    name: LangChain Compatibility (Node 22.13)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --filter @parallel-web/monorepo --filter @parallel-web/langchain... --frozen-lockfile
+
+      - name: Test tools and research example
+        run: pnpm --filter @parallel-web/langchain test
+
+      - name: Build and check both module formats
+        run: |
+          pnpm --filter @parallel-web/langchain build
+          pnpm --filter @parallel-web/langchain exec node --input-type=module -e "await import('@parallel-web/langchain')"
+          pnpm --filter @parallel-web/langchain exec node -e "require('@parallel-web/langchain')"
+
   dsh-compatibility:
     name: DSH Compatibility (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
