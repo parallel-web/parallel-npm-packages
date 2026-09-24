@@ -10,6 +10,7 @@ Monorepo for @parallel-web npm packages.
 - [`@parallel-web/langchain`](./packages/langchain) - Parallel Search and Extract tools for LangChain (unpublished)
 - [`@parallel-web/opencode-plugin`](./packages/opencode-plugin) - Opencode plugin for Parallel Web
 - [`@parallel-web/pi-extension`](./packages/pi-extension) - Pi web search, fetch, and cited research tools
+- [`@parallel-web/webmcp`](./packages/webmcp) - Free web search and page reading for agents visiting your website
 - `@parallel-web/oauth` - Internal, unpublished shared PKCE OAuth helper. Bundled into the opencode plugin and pi extension at build time (`noExternal`), so it is never installed by consumers and is intentionally marked `private`.
 
 ## Development
