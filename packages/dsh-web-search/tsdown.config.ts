@@ -16,6 +16,7 @@ export default defineConfig({
       '@deepseek-ai/dsh-launch-environment',
       '@deepseek-ai/dsh-web',
       '@deepseek-ai/schemastery',
+      'eventsource-parser/stream',
       'parallel-web',
     ],
   },

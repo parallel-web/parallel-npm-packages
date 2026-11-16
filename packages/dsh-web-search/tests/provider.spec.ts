@@ -229,7 +229,7 @@ describe('free Parallel MCP search', () => {
 
     expect(fetch).toHaveBeenCalledTimes(2);
     const [url, options] = fetch.mock.calls[0]!;
-    expect(url).toBe('https://search.parallel.ai/mcp');
+    expect(url).toBe('https://mcp.parallel.ai/mcp');
     expect(options).toMatchObject({
       method: 'POST',
       redirect: 'error',
@@ -260,6 +260,43 @@ describe('free Parallel MCP search', () => {
       firstBody.params.arguments.session_id
     );
     expect(clientFactory).not.toHaveBeenCalled();
+  });
+
+  it('returns the matching reply from the MCP event stream', async () => {
+    const encoder = new TextEncoder();
+    const reply = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      result: {
+        structuredContent: {
+          results: [
+            { url: 'https://example.test', excerpts: ['Useful excerpt'] },
+          ],
+        },
+      },
+    });
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            ': ping\r\n\r\ndata: {"jsonrpc":"2.0","method":"notifications/progress"}\r\n\r\n'
+          )
+        );
+        controller.enqueue(encoder.encode('event: message\r\nda'));
+        controller.enqueue(encoder.encode(`ta: ${reply}\r\n\r\n`));
+      },
+    });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(body, {
+        headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+      })
+    );
+    const provider = new ParallelSearchProvider({ ...baseOptions, apiKey: '' });
+
+    await expect(provider.search({ query: 'q' })).resolves.toEqual({
+      sources: [{ url: 'https://example.test', snippet: 'Useful excerpt' }],
+      truncated: false,
+    });
   });
 
   it('maps free MCP HTTP failures to WEB_PROVIDER_ERROR', async () => {

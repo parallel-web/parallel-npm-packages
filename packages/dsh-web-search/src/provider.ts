@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { EventSourceParserStream } from 'eventsource-parser/stream';
 import Parallel, {
   APIUserAbortError,
   type Parallel as ParallelTypes,
@@ -13,7 +14,7 @@ import type {
 
 export const PARALLEL_PROVIDER_ID = 'parallel';
 export const PARALLEL_API_ORIGIN = 'https://api.parallel.ai';
-const PARALLEL_SEARCH_MCP_URL = 'https://search.parallel.ai/mcp';
+const PARALLEL_MCP_URL = 'https://mcp.parallel.ai/mcp';
 export const DEFAULT_MAX_CHARS_TOTAL = 25_000;
 export const PARALLEL_SEARCH_MODES = ['turbo', 'basic', 'advanced'] as const;
 
@@ -120,7 +121,8 @@ export class ParallelSearchProvider implements WebSearchProvider {
     signal?: AbortSignal
   ): Promise<unknown> {
     const timeout = AbortSignal.timeout(60_000);
-    const response = await fetch(PARALLEL_SEARCH_MCP_URL, {
+    const requestId = 1;
+    const response = await fetch(PARALLEL_MCP_URL, {
       method: 'POST',
       headers: {
         Accept: 'application/json, text/event-stream',
@@ -131,7 +133,7 @@ export class ParallelSearchProvider implements WebSearchProvider {
         signal === undefined ? timeout : AbortSignal.any([signal, timeout]),
       body: JSON.stringify({
         jsonrpc: '2.0',
-        id: 1,
+        id: requestId,
         method: 'tools/call',
         params: {
           name: 'web_search',
@@ -144,25 +146,47 @@ export class ParallelSearchProvider implements WebSearchProvider {
       }),
     });
 
-    if (!response.ok)
-      throw new Error(`Parallel Search MCP HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`Parallel MCP HTTP ${response.status}`);
 
-    const payload: unknown = await response.json();
+    const payload = await readMcpResponse(response, requestId);
     if (!isRecord(payload))
       throw new TypeError('MCP response must be an object');
     if (isRecord(payload.error)) {
       throw new Error(
         typeof payload.error.message === 'string'
           ? payload.error.message
-          : 'Parallel Search MCP returned an error'
+          : 'Parallel MCP returned an error'
       );
     }
     if (!isRecord(payload.result) || payload.result.isError === true) {
-      throw new Error('Parallel Search MCP tool call failed');
+      throw new Error('Parallel MCP search tool call failed');
     }
 
     return payload.result.structuredContent;
   }
+}
+
+async function readMcpResponse(
+  response: Response,
+  requestId: number
+): Promise<unknown> {
+  const contentType = response.headers.get('content-type')?.split(';', 1)[0];
+  if (contentType?.trim().toLowerCase() !== 'text/event-stream') {
+    return response.json();
+  }
+
+  const events = response.body
+    ?.pipeThrough(new TextDecoderStream())
+    .pipeThrough(new EventSourceParserStream());
+  if (events) {
+    for await (const event of events) {
+      if (!event.data) continue;
+      const payload: unknown = JSON.parse(event.data);
+      if (isRecord(payload) && payload.id === requestId) return payload;
+    }
+  }
+
+  throw new Error('Parallel MCP stream ended before the search reply');
 }
 
 export function buildSearchBody(
