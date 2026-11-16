@@ -26,6 +26,7 @@ assert.equal(manifest.engines.node, '^22.19.0 || >=24.0.0');
 assert.equal(manifest.dsh?.bundle?.patch, './cordis.patch.yml');
 assert.deepEqual(manifest.dependencies, {
   '@deepseek-ai/schemastery': '3.18.1',
+  'eventsource-parser': '3.1.0',
   'parallel-web': '1.3.0',
 });
 assert.deepEqual(manifest.peerDependencies, {
