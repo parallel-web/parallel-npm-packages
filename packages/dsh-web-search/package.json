@@ -1,7 +1,7 @@
 {
   "name": "@parallel-web/dsh-web-search",
   "description": "Parallel Search provider for DeepSeek Harness",
-  "version": "0.1.0-rc.0",
+  "version": "0.1.0-rc.1",
   "author": "Parallel Web",
   "license": "MIT",
   "type": "module",
