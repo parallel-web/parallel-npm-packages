@@ -217,7 +217,13 @@ export async function runParallelResearch(
   timeout.unref?.();
   try {
     requestSignal.throwIfAborted();
-    const response = await fetch(PARALLEL_RESPONSES_URL, {
+    // Match the SDK-backed Search/Extract tools, including proxy path prefixes.
+    // Resolve at request time so a long-lived Pi process can change its endpoint.
+    const baseURL = process.env.PARALLEL_BASE_URL?.trim();
+    const responsesURL = baseURL
+      ? `${baseURL.replace(/\/$/, '')}/v1/responses`
+      : PARALLEL_RESPONSES_URL;
+    const response = await fetch(responsesURL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,

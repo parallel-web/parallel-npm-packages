@@ -204,6 +204,27 @@ pi --no-extensions --no-skills -e ./packages/pi-extension/dist/index.js
 
 This changes the browser login endpoints used by `/login parallel`.
 
+### Override The API Base URL
+
+Set `PARALLEL_BASE_URL` to route all three tools (`web_search`, `web_fetch`, and
+`web_research`) through a trusted API proxy or staging server:
+
+```bash
+export PARALLEL_BASE_URL=https://your-proxy-host/parallel
+export PARALLEL_API_KEY=proxy-managed
+pi --no-extensions --no-skills -e ./packages/pi-extension/dist/index.js
+```
+
+The tools append `/v1/search`, `/v1/extract`, or `/v1/responses` to the base URL,
+preserving a path prefix and accepting an optional trailing slash. The variable
+is read for each request; unset or blank values use `https://api.parallel.ai`.
+The resolved API key is sent to the configured server, so use only a trusted
+endpoint. A proxy that injects its own credential can use a non-empty placeholder
+key as shown above; authentication is still required by the extension.
+
+`PARALLEL_BASE_URL` controls API traffic. `PARALLEL_PLATFORM_URL` separately
+controls the browser OAuth login endpoints.
+
 ## Quick Smoke Test
 
 Once Pi is running with the extension loaded, ask something that should force web usage, for example:
